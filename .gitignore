@@ -1,0 +1,8 @@
+.venv/
+__pycache__/
+*.pyc
+profiles/*.json
+tests/fixtures/*.png
+tests/out/
+dist/
+build/
