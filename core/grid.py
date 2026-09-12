@@ -31,8 +31,7 @@ def _signed_profile(gray, axis):
     """부호 있는 그래디언트 합. axis=0 → x 프로파일, axis=1 → y 프로파일.
     슬롯 시작(어두움→밝음)은 양수 피크, 슬롯 끝(밝음→어두움)은 음수 피크."""
     dx, dy = (1, 0) if axis == 0 else (0, 1)
-    p = cv2.Sobel(gray, cv2.CV_32F, dx, dy, ksize=3).sum(axis=axis)
-    return cv2.GaussianBlur(p.reshape(1, -1), (0, 0), sigmaX=1.0).ravel()
+    return cv2.Sobel(gray, cv2.CV_32F, dx, dy, ksize=3).sum(axis=axis)
 
 
 def _peaks(p, thr):
@@ -90,35 +89,52 @@ def _find_slots(profile, min_size, max_size, debug=None):
     return accepted, size, pitch
 
 
-def _snap(gray, starts, pitch, axis, band, search=4, dark_ratio=0.45):
-    """각 시작점을 '내용에 가장 가까운 어두운 테두리 선' 바로 다음 픽셀로 옮기고,
-    끝점도 같은 방식으로 찾아 크기를 다시 잰다. 테두리가 여러 줄이어도 안쪽 선을 잡는다."""
+def _snap(gray, starts, pitch, axis, band, dark_ratio=0.35):
+    """각 슬롯을 테두리 선에 정밀히 맞춘다.
+    1) 끝 테두리: [s+0.75·pitch, s+pitch) 에서 가장 왼쪽 어두운 선
+    2) 시작: 끝에서 pitch 만큼 왼쪽 구간 [eb-pitch+1, eb-0.6·pitch] 에서 가장 오른쪽 어두운 선 + 1
+    '어두운 선' = 밴드의 상위 25% 밝기가 낮은 열(밴드 중앙값의 절반 이하). 진짜 테두리는 모든 행에서 어둡고,
+    아이콘 내부의 검은 부분은 프레임 행에서 밝아 걸러진다. 구분선이 여러 겹이어도 안쪽 선을 잡는다."""
     b0, b1 = band
-    prof = gray[b0:b1, :].mean(axis=0) if axis == 0 else gray[:, b0:b1].mean(axis=1)
+    seg = gray[b0:b1, :] if axis == 0 else gray[:, b0:b1].T
+    prof = np.percentile(seg, 75, axis=0)
     n = len(prof)
+    abs_dark = np.median(prof) * 0.5     # 밴드 전체 기준으로도 확실히 어두워야 함
+    black_thr = max(12.0, np.median(prof) * 0.25)   # '진짜 테두리' = 거의 검정
 
-    def dark_thr(lo, hi):
-        seg = prof[lo:hi]
-        return seg.min() + (seg.max() - seg.min()) * dark_ratio
+    def blacks(lo, hi):
+        lo, hi = max(0, lo), min(n, hi)
+        return [i for i in range(lo, hi) if prof[i] <= black_thr]
 
-    new_starts, sizes = [], []
+    def darks(lo, hi):
+        lo, hi = max(0, lo), min(n, hi)
+        if hi - lo < 2:
+            return []
+        w = prof[lo:hi]
+        thr = min(w.min() + (w.max() - w.min()) * dark_ratio, abs_dark)
+        return [i for i in range(lo, hi) if prof[i] <= thr]
+
+    # 1차: 끝 테두리 확정, 시작은 가장 안쪽 어두운 선 → 크기 중앙값
+    ends, first, sizes = [], [], []
     for s in starts:
-        # 시작: s 근처에서 어두운 열들 중 가장 오른쪽(내용에 가까운) 것
-        lo, hi = max(0, s - search - 1), min(n, s + 2)
-        thr = dark_thr(lo, hi)
-        darks = [i for i in range(lo, hi) if prof[i] <= thr]
-        ns = (max(darks) + 1) if darks else s
-        # 끝: [시작+0.75·pitch, 시작+pitch) 안에서 어두운 열들 중 가장 왼쪽 것
-        lo, hi = min(n - 1, ns + int(pitch * 0.75)), min(n, ns + pitch)
-        thr = dark_thr(lo, hi)
-        darks = [i for i in range(lo, hi) if prof[i] <= thr]
-        eb = min(darks) if darks else ns + int(pitch * 0.9)
-        new_starts.append(ns)
-        sizes.append(eb - ns)
-    return new_starts, int(np.median(sizes))
+        d = darks(s + int(pitch * 0.75), s + pitch)
+        eb = min(d) if d else s + int(pitch * 0.9)
+        d = darks(eb - pitch + 1, eb - int(pitch * 0.6) + 1)
+        ns = (max(d) + 1) if d else s
+        ends.append(eb); first.append(ns); sizes.append(eb - ns)
+    size = int(np.median(sizes))
 
+    # 2차: 시작 후보 c (어두운 선) 중 c+1+size 에도 어두운 선이 있는 것만 유효.
+    #      유효 후보 중 검출기 위치 s 에 가장 가까운 것. (검은 아이콘 내부 선은 짝이 없어 탈락,
+    #      겹겹 구분선은 짝이 맞는 안쪽 선이 선택됨)
+    new_starts = []
+    for s, ns in zip(starts, first):
+        cands = blacks(s - 6, s + int(pitch * 0.4))
+        valid = [c for c in cands if blacks(c + size - 1, c + size + 3)]
+        pick = min(valid, key=lambda c: abs(c + 1 - s)) if valid else None
+        new_starts.append(pick + 1 if pick is not None else ns)
+    return new_starts, size
 
-# ---------------------------------------------------------------- 공개 API
 
 def _keep_overlapping(starts, size, lo, hi, min_overlap):
     """[lo, hi) 구간과 size*min_overlap 이상 겹치는 슬롯만."""
