@@ -166,9 +166,13 @@ def main(pick, recalib, debug):
 
     targets = pick or list(range(len(layout.rows)))
     # 임시 설정: 모든 행 기본 60/30초, 연장되면 120/60초. (설정 UI 생기면 항목별로)
+    # 임시 설정 (설정 UI 생기면 항목별로): 모든 행 기본 60/30초, 연장 시 120/60초, 유지 필수는 꺼둠.
+    # 유지 필수를 시험하려면 예: KEEP_ROWS = {1, 5} 처럼 행 번호를 넣으면 됨
+    KEEP_ROWS: set[int] = set()
     tracker = Tracker([Watch(fps[i], f"행{i}", alert_under=[60, 30],
                              base_width=sites[i].mask.shape[1] if i in sites else None,
-                             alert_under_extended=[120, 60], row_index=i)
+                             alert_under_extended=[120, 60], row_index=i,
+                             keep=(i in KEEP_ROWS), keep_delay=10, keep_interval=30)
                        for i in targets if i in fps], debounce=3)
     con = Console(len(layout.rows))
     saver = FrameSaver(ROOT / "tests" / "fixtures" / "auto")
@@ -225,7 +229,8 @@ def main(pick, recalib, debug):
             for ev in tracker.update(states, secs):
                 msg = {"off": "꺼짐", "on": "켜짐", "lost": "목록에서 사라짐", "found": "다시 보임",
                        "under": f"{ev.value}초 미만", "extended": "연장됨 (이름 길어짐)",
-                       "unextended": "연장 끝", "resync": f"시간 재동기화 → {ev.value}초"}[ev.kind]
+                       "unextended": "연장 끝", "resync": f"시간 재동기화 → {ev.value}초",
+                       "keep": "꺼진 상태 유지 중 (켜세요)"}[ev.kind]
                 con.log(f"{ev.label} {msg}")
                 if ev.kind in ("off", "lost") and (n := saver.save(frame, f"{ev.kind}_row{ev.label[1:]}")):
                     con.log(f"  프레임 저장 {n}")

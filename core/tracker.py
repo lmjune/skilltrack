@@ -25,6 +25,11 @@ class Watch:
     base_width: int | None = None
     alert_under_extended: list[int] | None = None
     row_index: int | None = None      # 지정하면 지문 대신 행 번호로 찾음 (레이아웃 고정일 때)
+    # 유지 필수: 꺼진 상태가 keep_delay 초 이상 이어지면 keep_interval 초마다 반복 알림
+    # (마나실드·반신화: 꺼지면 위험 / 엘레멘탈 부여: 부활 후 꺼진 채로 남음)
+    keep: bool = False
+    keep_delay: float = 10.0
+    keep_interval: float = 30.0
 
 
 EXT_MARGIN = 10
@@ -34,7 +39,7 @@ RESYNC_TOL = 5      # 읽은 값이 추정과 이만큼 이상 다르면 재동�
 
 @dataclass
 class Event:
-    kind: str            # "off" | "on" | "under" | "lost" | "found" | "extended" | "unextended" | "resync"
+    kind: str            # "off" | "on" | "under" | "lost" | "found" | "extended" | "unextended" | "resync" | "keep"
     label: str
     value: int | None = None
     at: float = 0.0
@@ -56,6 +61,8 @@ class _Track:
     # 남은 시간 추정 (인식이 끊겨도 시간은 흐른다): 마지막으로 읽은 초와 그 시각
     last_sec: int | None = None
     last_at: float = 0.0
+    off_since: float | None = None     # 확정 '꺼짐' 시작 시각 (유지 필수용)
+    last_keep: float = -1e9
 
     def estimate(self, now):
         if self.last_sec is None:
@@ -104,6 +111,16 @@ class Tracker:
                         events += self._fire(t, Event(kind, t.watch.label, at=now), now)
                 if t.active:
                     t.fired_under.clear()
+                    t.off_since = None
+                else:
+                    t.off_since = now
+                    t.last_keep = -1e9
+
+            # --- 유지 필수: 꺼진 채로 유예 시간이 지나면 주기적으로 ---
+            if t.watch.keep and t.active is False and t.off_since is not None:
+                if now - t.off_since >= t.watch.keep_delay and now - t.last_keep >= t.watch.keep_interval:
+                    t.last_keep = now
+                    events.append(Event("keep", t.watch.label, at=now))
 
             # --- 연장 변형 감지 (이름 폭). 활성 행에서만 (비활성은 연장될 수 없고, 밝은 배경에선 이름 폭이 불안정) ---
             if t.watch.base_width and row.name_width and t.active:

@@ -122,3 +122,38 @@ def test_base_width_lowers_if_calibrated_while_extended():
     run(t, [[row(FP_A, True, width=40)]] * 3)
     assert w.base_width == 40
     assert [k for k, _ in run(t, [[row(FP_A, True, width=90)]] * 2)] == ["extended"]
+
+
+def test_keep_nags_while_off_after_delay():
+    """유지 필수: 꺼진 지 10초 지나면 30초마다. 다시 켜지면 멈춤."""
+    w = Watch(FP_A, "A", alert_off=False, keep=True, keep_delay=10, keep_interval=30)
+    t = Tracker([w], debounce=1)
+    out = []
+    out += t.update([row(FP_A, True)], {}, now=0.0)
+    for k in range(1, 100):                       # 99초 동안 꺼짐
+        out += t.update([row(FP_A, False)], {}, now=float(k))
+    assert [e.at for e in out if e.kind == "keep"] == [11.0, 41.0, 71.0]   # 꺼짐 확정이 t=1
+    out2 = t.update([row(FP_A, True)], {}, now=100.0)
+    for k in range(101, 200):
+        out2 += t.update([row(FP_A, True)], {}, now=float(k))
+    assert not any(e.kind == "keep" for e in out2)
+
+
+def test_keep_ignores_brief_off():
+    w = Watch(FP_A, "A", alert_off=False, keep=True, keep_delay=10)
+    t = Tracker([w], debounce=1)
+    out = t.update([row(FP_A, True)], {}, now=0.0)
+    for k in range(1, 8):
+        out += t.update([row(FP_A, False)], {}, now=float(k))   # 7초만 꺼짐
+    out += t.update([row(FP_A, True)], {}, now=8.0)
+    assert not any(e.kind == "keep" for e in out)
+
+
+def test_keep_starts_from_initial_off():
+    """프로그램 켰을 때 이미 꺼져 있어도 (첫 확정) 유지 필수는 잔소리한다."""
+    w = Watch(FP_A, "A", keep=True, keep_delay=5, keep_interval=100)
+    t = Tracker([w], debounce=1)
+    out = []
+    for k in range(0, 10):
+        out += t.update([row(FP_A, False)], {}, now=float(k))
+    assert [e.kind for e in out] == ["keep"]
