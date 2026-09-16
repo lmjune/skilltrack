@@ -32,6 +32,13 @@ class RowLayout:
     right: int
     rows: list[Row] = field(default_factory=list)
     sections: list[list[int]] = field(default_factory=list)
+    time_right: int | None = None     # 시간 텍스트가 끝나는 열 (오른쪽 정렬). 처음 읽힌 순간 학습
+
+    def widen(self, right):
+        """텍스트 영역을 right 까지 넓힌다 (시간은 캘리브레이션 때 안 보일 수 있으니 탐색은 넓게)."""
+        self.right = right
+        self.rows = [Row(y=rw.y, icon=rw.icon, text=(rw.text[0], rw.text[1], right - rw.text[0], rw.text[3]))
+                     for rw in self.rows]
 
     @property
     def pinned(self) -> list[Row]:
@@ -193,13 +200,19 @@ def _detect_with_band(gray, edge, strokes, band, debug=None):
 
     # 아이콘은 정사각형 → 띠의 오른쪽 끝을 icon_h 로 고정 (선분 수 기준 띠는 오른쪽으로 넘칠 수 있음)
     ix1 = min(ix1, ix0 + icon_h + 1)
-    text_x = ix1 + 1
+    # 텍스트 시작: 아이콘 오른쪽 테두리 선 위부터. 테두리는 어두워 획이 없으니 이름 범위는 첫 획 열부터 잡힌다.
+    # (띠 왼쪽이 프레임 선에서 잡히든 아이콘 내용에서 잡히든 첫 글자가 안 잘리게 여유를 둔다)
+    text_x = ix0 + icon_h - 1
     if text_x >= W - 10:
         return None
-    lit = np.where(strokes[:, text_x:].any(axis=0))[0]
+    tops_a = _box_tops(prof, icon_h, pitch)
+    # 텍스트 오른쪽 경계: 아이콘 행들 안의 획만 본다 (패널 위아래 다른 UI에 영향받지 않게)
+    rows_mask = np.zeros(H, bool)
+    for t in tops_a:
+        rows_mask[max(0, t):t + icon_h] = True
+    lit = np.where((strokes[rows_mask, text_x:] if rows_mask.any() else strokes[:, text_x:]).any(axis=0))[0]
     right = min(W, text_x + int(lit[-1]) + 4) if len(lit) else W
 
-    tops_a = _box_tops(prof, icon_h, pitch)
     centers, energy = _text_centers(edge, text_x, right, icon_h, pitch)
     tops_b = [c - icon_h // 2 for c in centers]
 
@@ -247,8 +260,13 @@ def _detect_with_band(gray, edge, strokes, band, debug=None):
         return None
     icon_e = np.median([prof[t:t + icon_h].mean() for t in tops])
     gap_e = np.median([prof[t + icon_h:t + pitch].mean() for t in tops[:-1]]) if len(tops) > 1 else 0
-    if gap_e > icon_e * 0.35:
+    if gap_e > icon_e * 0.6:          # 밝은 질감 배경은 틈에도 엣지가 좀 있으니 느슨하게
         return None
+    # 아이콘 열은 행의 맨 왼쪽: 그 왼쪽에 글자 획이 있으면 글자 중간을 아이콘으로 잘못 잡은 것
+    if ix0 > 0:
+        left_strokes = sum(1 for t in tops if strokes[t:t + icon_h, :ix0].sum() >= 6)
+        if left_strokes > 0.3 * len(tops):
+            return None
 
     rows = [Row(y=t, icon=(ix0, t, ix1 - ix0, icon_h),
                 text=(text_x, t, right - text_x, icon_h)) for t in tops]

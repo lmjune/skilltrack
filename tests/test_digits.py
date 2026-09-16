@@ -47,4 +47,4 @@ def test_unknown_glyph_returns_none(states):
     lib = GlyphLib()   # 빈 라이브러리
     s = next(s for s in states if s.time_img is not None)
     r = read_time(s.time_img, lib)
-    assert r.seconds is None and r.unknown
+    assert r.seconds is None and not r.plausible   # 라이브러리가 비면 초/분도 몰라 '시간 아님'

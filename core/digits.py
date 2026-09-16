@@ -14,7 +14,7 @@ import json
 from pathlib import Path
 import numpy as np
 
-MAX_DIFF = 3        # 같은 글자로 볼 최대 픽셀 차이
+MAX_DIFF = 1        # 같은 글자로 볼 최대 픽셀 차이 (렌더링이 픽셀 단위로 정확하다. 3이면 9↔3 혼동)
 
 
 @dataclass
@@ -30,6 +30,7 @@ class TimeRead:
     seconds: int | None
     text: str
     unknown: list[Glyph] = field(default_factory=list)
+    plausible: bool = True     # 시간 텍스트처럼 생겼는가 (마지막 글자가 초/분). 아니면 배경 잡음
 
 
 def _to_mask(img_bgr) -> np.ndarray:
@@ -110,6 +111,9 @@ def read_time(time_img, lib: GlyphLib) -> TimeRead:
             text += "?"
         else:
             text += g.label
+    # 시간은 반드시 '초' 또는 '분'으로 끝난다. 아니면 배경 잡음 → 모르는 글자로 취급하지 않음
+    if not glyphs or glyphs[-1].label not in ("초", "분"):
+        return TimeRead(None, text, [], plausible=False)
     if unknown:
         return TimeRead(None, text, unknown)
 
