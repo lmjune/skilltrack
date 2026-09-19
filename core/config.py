@@ -26,6 +26,7 @@ class General:
     hotkey_toggle: str = "F9"
     hotkey_settings: str = "F10"
     hide_when_inactive: bool = True
+    sound_file: str = ""                   # 공통 알림 소리 (wav). 비우면 심각도별 비프
 
 
 @dataclass
@@ -39,7 +40,6 @@ class WatchCfg:
     keep: bool = False
     keep_delay: float = 10.0
     keep_interval: float = 30.0
-    sound_file: str = ""                   # 비우면 심각도별 비프
 
 
 @dataclass

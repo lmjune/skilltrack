@@ -60,7 +60,6 @@ def main(recalib, sound_override):
     if ov.mirror_rows:
         opts = [RowOpt(m.row, m.icon, m.name, m.time, m.only_active, m.dim_inactive) for m in ov.mirror_rows]
         mirror = StatusOverlay(sess.layout, opts, pos=tuple(ov.mirror_pos), scale=ov.mirror_scale, opacity=ov.mirror_opacity)
-    sound_files = {row: w.sound_file for row, w in cfg.watches.items() if w.sound_file}
 
     def tick():
         frame = cap.grab(sess.region)
@@ -77,8 +76,7 @@ def main(recalib, sound_override):
             level, dur = LEVEL[ev.kind]
             text = f"{ev.label} {event_text(ev)}"
             print(f"[{datetime.now():%H:%M:%S}] {text}")
-            row = next((t.watch.row_index for t in sess.tracker.tracks if t.watch.label == ev.label), None)
-            overlay.push(text, level, dur, sound=sound, sound_file=sound_files.get(row))
+            overlay.push(text, level, dur, sound=sound, sound_file=g.sound_file or None)
 
     timer = QTimer(); timer.timeout.connect(tick); timer.start(int(1000 / g.fps))
     signal.signal(signal.SIGINT, signal.SIG_DFL)
