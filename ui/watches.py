@@ -146,6 +146,8 @@ class WatchesWindow(QWidget):
         self.sound = QLineEdit(cfg.general.sound_file); self.sound.setPlaceholderText("wav 파일 — 비우면 기본 비프음")
         pick = QPushButton("찾기"); pick.clicked.connect(self._pick_sound)
         cl.addLayout(hbox(self.sound_on, self.sound, pick, stretch_end=False))
+        self.keep_act = QCheckBox("반복 알림은 감시 버프가 하나라도 켜져 있을 때만"); self.keep_act.setChecked(cfg.general.keep_needs_activity)
+        cl.addLayout(hbox(self.keep_act, muted("마을처럼 아무것도 안 켠 상태에선 조용히")))
         v.addWidget(common); v.addStretch()
 
         foot = QWidget(); foot.setObjectName("footer"); fl = QHBoxLayout(foot); fl.setContentsMargins(28, 12, 28, 12)
@@ -164,6 +166,7 @@ class WatchesWindow(QWidget):
         self.cfg.overlays.mirror_rows = [m for c in self.cards if (m := c.mirror_cfg())]
         self.cfg.general.sound_file = self.sound.text().strip()
         self.cfg.general.sound = self.sound_on.isChecked()
+        self.cfg.general.keep_needs_activity = self.keep_act.isChecked()
         self.cfg.save()
         QMessageBox.information(self, "저장", "저장했습니다. 실행 중이면 run.py 를 다시 시작하세요.")
         self.close()

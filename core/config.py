@@ -27,6 +27,7 @@ class General:
     hotkey_settings: str = "F10"
     hide_when_inactive: bool = True
     sound_file: str = ""                   # 공통 알림 소리 (wav). 비우면 심각도별 비프
+    keep_needs_activity: bool = True       # 반복 알림은 감시 버프가 하나라도 켜져 있을 때만 (마을에선 조용)
 
 
 @dataclass

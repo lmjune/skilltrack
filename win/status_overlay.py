@@ -17,6 +17,8 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QImage, QPainter, QPixmap
 from PySide6.QtWidgets import QWidget
 
+from win.alert_overlay import EditableOverlay
+
 WDA_EXCLUDEFROMCAPTURE = 0x11
 TIME_W = 80          # 시간 영역 폭 (time_right 왼쪽으로). '25분 35초' 가 46px 이므로 여유
 
@@ -31,27 +33,37 @@ class RowOpt:
     dim_inactive: bool = True
 
 
-class StatusOverlay(QWidget):
+class StatusOverlay(EditableOverlay):
     def __init__(self, layout, opts: list[RowOpt], pos=(1500, 1300), scale=2.0, gap=8, opacity=0.95):
         super().__init__()
+        self._init_editable("버프 표시")
         self.layout_, self.opts, self.scale, self.gap = layout, opts, scale, gap
         self.rows_data = {}          # row → (QPixmap, active, key)
         self._last_key = {}
 
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool | Qt.WindowTransparentForInput)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAttribute(Qt.WA_ShowWithoutActivating)
         self.setWindowOpacity(opacity)
-
-        h = layout.icon_h
-        self.row_px = int(h * scale) + gap
-        w = int((layout.icon_w + 4 + (layout.time_right or layout.right) - layout.text_x) * scale)
-        self.setGeometry(pos[0], pos[1], w, self.row_px * len(opts))
+        self.move(pos[0], pos[1])
+        self.set_scale(scale)
         self.show()
-        try:
-            ctypes.windll.user32.SetWindowDisplayAffinity(int(self.winId()), WDA_EXCLUDEFROMCAPTURE)
-        except Exception:
-            pass
+        self._apply_flags()
+
+    def set_scale(self, scale):
+        L = self.layout_
+        self.scale = max(0.5, min(6.0, float(scale)))
+        self.row_px = int(L.icon_h * self.scale) + self.gap
+        w = int((L.icon_w + 4 + (L.time_right or L.right) - L.text_x) * self.scale)
+        self.resize(w, self.row_px * len(self.opts) + (30 if self.edit_mode else 0))
+        self.update()
+
+    def set_edit(self, on):
+        super().set_edit(on)
+        self.set_scale(self.scale)          # 편집 중엔 제목 줄 높이만큼 여유
+
+    def wheelEvent(self, e):
+        if self.edit_mode:
+            self.set_scale(self.scale + (0.1 if e.angleDelta().y() > 0 else -0.1)); self.moved.emit()
 
     # ------------------------------------------------------------ 갱신
     def update_from(self, frame, result):
@@ -106,6 +118,7 @@ class StatusOverlay(QWidget):
     def paintEvent(self, _):
         p = QPainter(self)
         p.setRenderHint(QPainter.SmoothPixmapTransform, False)
+        self._paint_edit_frame(p)
         for i, o in enumerate(self.opts):
             d = self.rows_data.get(o.row)
             if d is None:

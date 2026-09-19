@@ -101,7 +101,7 @@ def calibrate(cap, region):
 
 class Session:
     def __init__(self, cap, region, rect, recalib=False, pick=None, watch_opts=None,
-                 saver: FrameSaver | None = None, debounce=3, fps=5):
+                 saver: FrameSaver | None = None, debounce=3, fps=5, keep_needs_activity=True):
         """
         region: 화면 절대 좌표 캡처 영역. rect: 클라이언트 기준 (저장 키).
         watch_opts: {row: dict(Watch 필드)} 행별 알림 설정. 없으면 기본.
@@ -127,7 +127,7 @@ class Session:
             opts.update((watch_opts or {}).get(i, {}))
             watches.append(Watch(self.fps_[i], opts.pop("label", f"행{i}"), row_index=i,
                                  base_width=self.sites[i].mask.shape[1] if i in self.sites else None, **opts))
-        self.tracker = Tracker(watches, debounce=debounce)
+        self.tracker = Tracker(watches, debounce=debounce, keep_needs_activity=keep_needs_activity)
         self.prev_time, self.unk_n = {}, {}
 
     # ------------------------------------------------------------ 준비

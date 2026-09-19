@@ -10,7 +10,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer, QRectF
+from PySide6.QtCore import Qt, QTimer, QRectF, Signal, QPoint
 from PySide6.QtGui import QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import QWidget
 
@@ -33,22 +33,68 @@ class Toast:
     duration: float
 
 
-class AlertOverlay(QWidget):
-    def __init__(self, pos=(1600, 200), width=520, row_h=48, max_rows=6, font_pt=18):
-        super().__init__()
-        self.toasts: list[Toast] = []
-        self.row_h, self.max_rows, self.width_ = row_h, max_rows, width
-        self.font_ = QFont("Malgun Gothic", font_pt, QFont.Bold)
+FLAGS_RUN = Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool | Qt.WindowTransparentForInput
+FLAGS_EDIT = Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool
 
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool | Qt.WindowTransparentForInput)
-        self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setAttribute(Qt.WA_ShowWithoutActivating)
-        self.setGeometry(pos[0], pos[1], width, row_h * max_rows + 8)
-        self.show()
+
+class EditableOverlay(QWidget):
+    """편집 모드 공통: 클릭 통과를 풀고 드래그로 창을 옮긴다. 테두리와 제목을 그린다."""
+    moved = Signal()
+
+    def _init_editable(self, title):
+        self.edit_title = title
+        self.edit_mode = False
+        self._drag = None
+
+    def _apply_flags(self):
+        vis = self.isVisible()
+        self.setWindowFlags(FLAGS_EDIT if self.edit_mode else FLAGS_RUN)
+        if vis:
+            self.show()
         try:
             ctypes.windll.user32.SetWindowDisplayAffinity(int(self.winId()), WDA_EXCLUDEFROMCAPTURE)
         except Exception:
             pass
+
+    def set_edit(self, on: bool):
+        self.edit_mode = on
+        self._apply_flags()
+        self.update()
+
+    def mousePressEvent(self, e):
+        if self.edit_mode and e.button() == Qt.LeftButton:
+            self._drag = e.globalPosition().toPoint() - self.frameGeometry().topLeft()
+
+    def mouseMoveEvent(self, e):
+        if self.edit_mode and self._drag is not None:
+            self.move(e.globalPosition().toPoint() - self._drag); self.moved.emit()
+
+    def mouseReleaseEvent(self, e):
+        self._drag = None
+
+    def _paint_edit_frame(self, p: QPainter):
+        if not self.edit_mode:
+            return
+        p.setPen(QPen(QColor(91, 140, 255), 2, Qt.DashLine)); p.setBrush(QColor(91, 140, 255, 30))
+        p.drawRoundedRect(QRectF(1, 1, self.width() - 2, self.height() - 2), 10, 10)
+        p.setPen(QPen(QColor(255, 255, 255)))
+        p.setFont(QFont("Malgun Gothic", 11, QFont.Bold))
+        p.drawText(QRectF(10, self.height() - 26, self.width() - 20, 22), Qt.AlignLeft | Qt.AlignVCenter, f"{self.edit_title} — 드래그로 이동")
+
+
+class AlertOverlay(EditableOverlay):
+    def __init__(self, pos=(1600, 200), width=520, row_h=48, max_rows=6, font_pt=18):
+        super().__init__()
+        self._init_editable("알림")
+        self.toasts: list[Toast] = []
+        self.row_h, self.max_rows, self.width_ = row_h, max_rows, width
+        self.font_ = QFont("Malgun Gothic", font_pt, QFont.Bold)
+
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setAttribute(Qt.WA_ShowWithoutActivating)
+        self.setGeometry(pos[0], pos[1], width, row_h * max_rows + 8)
+        self.show()
+        self._apply_flags()
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._tick)
         self.timer.start(50)
@@ -77,6 +123,7 @@ class AlertOverlay(QWidget):
     def paintEvent(self, _):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
+        self._paint_edit_frame(p)
         p.setFont(self.font_)
         now = time.time()
         for i, t in enumerate(self.toasts):
