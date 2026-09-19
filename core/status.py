@@ -133,8 +133,11 @@ def parse_rows(img, layout: RowLayout) -> list[RowState]:
         # 이름: 첫 덩어리부터 시간 직전까지. 못 읽어도 행은 내보낸다
         # (밝은 배경의 반투명 글자는 세그멘테이션이 안 되지만, 행 번호로 추적하고 활성은 획 자리로 판정)
         if name_runs:
-            a = name_runs[0][0]
-            b = max([rr[1] for rr in name_runs if time_rng is None or rr[1] < time_rng[0]] or [a])
+            # 이름 = 첫 덩어리만. (띄어쓰기 ≤10px 는 이미 한 덩어리로 합쳐져 있고, 연장 접미 "(투안의 노래)" 도
+            #  붙어서 같은 덩어리) 오른쪽에 따로 떠 있는 잠깐 글자(버프 켤 때 잔상 등)는 이름이 아니다
+            a, b = name_runs[0]
+            if time_rng is not None and b >= time_rng[0]:
+                b = time_rng[0] - 1
             name_img, nm, name_rng = text[:, a:b + 1], name_mask[:, a:b + 1], (a, b)
         else:
             name_img, nm, name_rng = text[:, :1], name_mask[:, :1], None
