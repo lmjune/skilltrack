@@ -1,8 +1,11 @@
 """
-실행: 상태창 감시 + 알림 오버레이 (+ 선택: 스킬 미러). 콘솔엔 이벤트만.
+실행: 상태창 감시 + 알림 오버레이 + 상태 미러. 설정은 profiles/config.json.
 
 사용법: python win/run.py [--recalib] [--no-sound]
 종료:   터미널 Ctrl+C
+
+처음 실행이면 config.json 이 기본값으로 생성된다. 상태창 영역(regions.status)은 3b 드래그 UI 로 채우거나
+당장은 파일을 열어 [x, y, w, h] 를 적으면 된다 (클라이언트 기준).
 """
 import signal
 import sys
@@ -13,45 +16,51 @@ from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from win.session import Session, event_text
+from core.config import Config, CONFIG_FILE
+from win.session import Session, FrameSaver, event_text, ROOT
 from win.alert_overlay import AlertOverlay
 from win.status_overlay import StatusOverlay, RowOpt
 from win.window import find_window, client_rect
-# win.capture (dxcam) 는 import 시점에 DPI 설정을 잡으므로 QApplication 뒤에서 import 한다
 
-STATUS_RECT = (2880, 1230, 300, 550)
-FPS = 5
-ALERT_POS = (1500, 1500)       # 알림 좌상단 (화면 절대 좌표). 설정 UI 생기면 드래그로
-KEEP_ROWS: set[int] = set()
-
-# 상태 미러: 표시할 행과 옵션. 비우면 미러 없음. 설정 UI 생기면 체크로 대체
-MIRROR_POS = (1500, 1300)
-MIRROR_SCALE = 2.0
-MIRROR_ROWS = [
-    RowOpt(row=2, icon=True, name=True, time=True, only_active=False),   # 예: 전장의 서곡
-    RowOpt(row=5, icon=True, name=True, time=False, only_active=False),  # 예: 마나실드
-]
-
-# 이벤트 → (심각도, 표시 시간). resync/found 는 표시 안 함
 LEVEL = {"off": ("danger", 6), "keep": ("danger", 5), "under": ("warn", 5), "lost": ("warn", 5),
          "on": ("ok", 3), "extended": ("info", 3), "unextended": ("info", 3)}
 
 
-def main(recalib, sound):
-    app = QApplication(sys.argv)          # dxcam 보다 먼저: Qt 가 DPI 설정을 잡게 (경고 방지)
-    from win.capture import Capture
-    hwnd = find_window("마비노기")
+def main(recalib, sound_override):
+    app = QApplication(sys.argv)
+    from win.capture import Capture      # dxcam 은 QApplication 뒤에 (DPI 경고 방지)
+
+    cfg = Config.load()
+    if not CONFIG_FILE.exists():
+        cfg.save()
+        print(f"설정 파일 생성: {CONFIG_FILE}")
+    if not cfg.regions.status:
+        print("상태창 영역이 설정되지 않았습니다. config.json 의 regions.status 에 [x, y, w, h] 를 적거나 "
+              "영역 설정 UI(3b)를 사용하세요. 예: [2880, 1230, 300, 550]")
+        return
+    g = cfg.general
+    sound = g.sound if sound_override is None else sound_override
+
+    hwnd = find_window(g.window_title)
+    if not hwnd:
+        print(f"게임 창을 못 찾음: '{g.window_title}'"); return
     cx, cy, _, _ = client_rect(hwnd)
-    sx, sy, sw, sh = STATUS_RECT
+    sx, sy, sw, sh = cfg.regions.status
     cap = Capture()
-    sess = Session(cap, (cx + sx, cy + sy, sw, sh), STATUS_RECT, recalib=recalib,
-                   watch_opts={i: {"keep": True} for i in KEEP_ROWS})
+    saver = FrameSaver(ROOT / "tests" / "fixtures" / "auto", enabled=g.diag_save)
+    sess = Session(cap, (cx + sx, cy + sy, sw, sh), tuple(cfg.regions.status), recalib=recalib,
+                   watch_opts=cfg.watch_opts(), saver=saver)
     for n in sess.notes:
         print(n)
 
-    overlay = AlertOverlay(pos=ALERT_POS)
+    ov = cfg.overlays
+    overlay = AlertOverlay(pos=tuple(ov.alert_pos), width=ov.alert_width, font_pt=ov.alert_font_pt)
     overlay.push("skilltrack 감시 시작", "info", 2.5, sound=False)
-    mirror = StatusOverlay(sess.layout, MIRROR_ROWS, pos=MIRROR_POS, scale=MIRROR_SCALE) if MIRROR_ROWS else None
+    mirror = None
+    if ov.mirror_rows:
+        opts = [RowOpt(m.row, m.icon, m.name, m.time, m.only_active, m.dim_inactive) for m in ov.mirror_rows]
+        mirror = StatusOverlay(sess.layout, opts, pos=tuple(ov.mirror_pos), scale=ov.mirror_scale, opacity=ov.mirror_opacity)
+    sound_files = {row: w.sound_file for row, w in cfg.watches.items() if w.sound_file}
 
     def tick():
         frame = cap.grab(sess.region)
@@ -68,9 +77,10 @@ def main(recalib, sound):
             level, dur = LEVEL[ev.kind]
             text = f"{ev.label} {event_text(ev)}"
             print(f"[{datetime.now():%H:%M:%S}] {text}")
-            overlay.push(text, level, dur, sound=sound)
+            row = next((t.watch.row_index for t in sess.tracker.tracks if t.watch.label == ev.label), None)
+            overlay.push(text, level, dur, sound=sound, sound_file=sound_files.get(row))
 
-    timer = QTimer(); timer.timeout.connect(tick); timer.start(int(1000 / FPS))
+    timer = QTimer(); timer.timeout.connect(tick); timer.start(int(1000 / g.fps))
     signal.signal(signal.SIGINT, signal.SIG_DFL)
     keepalive = QTimer(); keepalive.timeout.connect(lambda: None); keepalive.start(200)
     print("실행 중. Ctrl+C 로 종료")
@@ -79,4 +89,4 @@ def main(recalib, sound):
 
 if __name__ == "__main__":
     args = sys.argv[1:]
-    main("--recalib" in args, "--no-sound" not in args)
+    main("--recalib" in args, False if "--no-sound" in args else None)
