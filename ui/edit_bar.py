@@ -10,7 +10,11 @@ class EditBar(QWidget):
     opacity_changed = Signal(float)
     stack = Signal()
 
-    def __init__(self, scale=2.0, opacity=0.95, has_mirror=True):
+    skill_scale_changed = Signal(float)
+    skill_opacity_changed = Signal(float)
+    skill_stack = Signal()
+
+    def __init__(self, scale=2.0, opacity=0.95, has_mirror=True, skill_scale=2.0, skill_opacity=0.95, has_skill=False):
         super().__init__()
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
         self.setObjectName("card")
@@ -18,20 +22,25 @@ class EditBar(QWidget):
         t = QLabel("오버레이 배치 편집"); t.setObjectName("title"); v.addWidget(t)
         s = QLabel("점선 창을 드래그해 옮기세요 (항목마다 따로). 휠 = 배율.  Shift+드래그 / Shift+휠 = 전부 함께"); s.setObjectName("subtitle"); v.addWidget(s)
 
-        row = QHBoxLayout(); row.setSpacing(10); v.addLayout(row)
-        row.addWidget(QLabel("전체 배율"))
-        self.scale = QDoubleSpinBox(); self.scale.setRange(0.5, 6.0); self.scale.setSingleStep(0.1); self.scale.setValue(scale); self.scale.setFixedWidth(80)
-        self.scale.valueChanged.connect(self.scale_changed.emit); row.addWidget(self.scale)
-        row.addWidget(QLabel("투명도"))
-        self.opacity = QDoubleSpinBox(); self.opacity.setRange(0.2, 1.0); self.opacity.setSingleStep(0.05); self.opacity.setValue(opacity); self.opacity.setFixedWidth(80)
-        self.opacity.valueChanged.connect(self.opacity_changed.emit); row.addWidget(self.opacity)
-        st = QPushButton("세로로 정리"); st.setToolTip("첫 항목 아래로 나머지를 정렬"); st.clicked.connect(self.stack.emit); row.addWidget(st)
-        row.addStretch()
-        if not has_mirror:
-            self.scale.setEnabled(False); self.opacity.setEnabled(False)
+        self.scale, self.opacity = self._row(v, "버프 표시", scale, opacity, self.scale_changed, self.opacity_changed, self.stack, has_mirror)
+        self.skill_scale, self.skill_opacity = self._row(v, "스킬 표시", skill_scale, skill_opacity, self.skill_scale_changed, self.skill_opacity_changed, self.skill_stack, has_skill)
 
         btns = QHBoxLayout(); btns.addStretch(); v.addLayout(btns)
         c = QPushButton("취소"); c.clicked.connect(self.cancelled.emit); btns.addWidget(c)
         ok = QPushButton("저장"); ok.setObjectName("primary"); ok.clicked.connect(self.saved.emit); btns.addWidget(ok)
         self.adjustSize()
         self.move(40, 40)
+
+    @staticmethod
+    def _row(v, label, scale, opacity, sig_scale, sig_opacity, sig_stack, enabled):
+        row = QHBoxLayout(); row.setSpacing(10); v.addLayout(row)
+        l = QLabel(label); l.setFixedWidth(70); row.addWidget(l)
+        row.addWidget(QLabel("배율"))
+        sc = QDoubleSpinBox(); sc.setRange(0.5, 6.0); sc.setSingleStep(0.1); sc.setValue(scale); sc.setFixedWidth(80); sc.valueChanged.connect(sig_scale.emit); row.addWidget(sc)
+        row.addWidget(QLabel("투명도"))
+        op = QDoubleSpinBox(); op.setRange(0.2, 1.0); op.setSingleStep(0.05); op.setValue(opacity); op.setFixedWidth(80); op.valueChanged.connect(sig_opacity.emit); row.addWidget(op)
+        st = QPushButton("세로로 정리"); st.clicked.connect(sig_stack.emit); row.addWidget(st)
+        row.addStretch()
+        for w in (sc, op, st):
+            w.setEnabled(enabled)
+        return sc, op

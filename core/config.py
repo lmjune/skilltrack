@@ -62,9 +62,21 @@ class Overlays:
     alert_pos: list = field(default_factory=lambda: [1500, 1500])
     alert_width: int = 520
     alert_font_pt: int = 18
-    mirror_pos: list = field(default_factory=lambda: [1500, 1300])
+    mirror_pos: list = field(default_factory=lambda: [1500, 1300])     # 버프 표시 기본 시작 위치
     mirror_scale: float = 2.0
     mirror_opacity: float = 0.95
+    skill_pos: list = field(default_factory=lambda: [1500, 1600])      # 스킬 표시 기본 시작 위치
+    skill_scale: float = 2.0
+    skill_opacity: float = 0.95
+
+
+@dataclass
+class SkillItem:
+    region: str                      # regions.skill 의 id
+    slot: int
+    mode: str = "always"             # always | cooling | dimmed
+    pos: list | None = None
+    scale: float | None = None
 
 
 @dataclass
@@ -80,6 +92,7 @@ class Profile:
     regions: Regions = field(default_factory=Regions)
     watches: dict = field(default_factory=dict)          # {row: WatchCfg}
     mirror_rows: list = field(default_factory=list)      # [MirrorRow]
+    skill_items: list = field(default_factory=list)      # [SkillItem]
 
     def watch_opts(self) -> dict:
         out = {}
@@ -153,5 +166,6 @@ def _profile_from(pd):
     rg = pd.get("regions", {})
     ws = {int(k): WatchCfg(**_pick(v, WatchCfg)) for k, v in pd.get("watches", {}).items()}
     ms = [MirrorRow(**_pick(r, MirrorRow)) for r in pd.get("mirror_rows", [])]
+    sk = [SkillItem(**_pick(r, SkillItem)) for r in pd.get("skill_items", [])]
     return Profile(name=pd.get("name", "캐릭터"), regions=Regions(status=rg.get("status"), skill=rg.get("skill", []), boss=rg.get("boss")),
-                   watches=ws, mirror_rows=ms)
+                   watches=ws, mirror_rows=ms, skill_items=sk)

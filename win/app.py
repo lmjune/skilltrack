@@ -18,6 +18,7 @@ from core.config import Config, CONFIG_FILE
 from win.session import Session, FrameSaver, event_text, ROOT
 from win.alert_overlay import AlertOverlay
 from win.status_overlay import StatusMirrorGroup, RowOpt
+from win.skill_overlay import SkillMirrorGroup
 from win.window import find_window, client_rect
 from win.hotkeys import Hotkeys
 from ui import theme
@@ -50,7 +51,8 @@ class App:
             self.cfg.save()
         self.sess = None
         self.mismatch = False
-        self.overlay = self.mirror = None
+        self.overlay = self.mirror = self.skills = None
+        self.client_xy = (0, 0)
         self.edit = None                          # 편집 모드 상태
         self.windows = {}                         # 열린 설정 창
         self.last_error = ""
@@ -76,6 +78,7 @@ class App:
         m.addAction("열기", self.open_home)
         m.addAction("배치 편집", self.edit_begin)
         m.addAction("감시 항목…", self.open_watches)
+        m.addAction("스킬 표시…", self.open_skills)
         m.addAction("일반 설정…", self.open_general)
         sub = m.addMenu("영역 설정")
         sub.addAction("상태창 영역 지정 (현재 캐릭터)", lambda: self.calibrate("status"))
@@ -122,6 +125,7 @@ class App:
         if not hwnd:
             self.last_error = f"게임 창을 못 찾음: '{g.window_title}'"; self.tray.showMessage("skilltrack", self.last_error); self._refresh_home(); return
         cx, cy, _, _ = client_rect(hwnd)
+        self.client_xy = (cx, cy)
         x, y, w, h = prof.regions.status
         try:
             saver = FrameSaver(ROOT / "tests" / "fixtures" / "auto", enabled=g.diag_save)
@@ -163,7 +167,13 @@ class App:
             self.overlay.close()
         if self.mirror:
             self.mirror.close(); self.mirror = None
+        if self.skills:
+            self.skills.close(); self.skills = None
         self.overlay = AlertOverlay(pos=tuple(ov.alert_pos), width=ov.alert_width, font_pt=ov.alert_font_pt)
+        prof0 = self.cfg.profile()
+        if prof0 and prof0.skill_items and prof0.regions.skill:
+            self.skills = SkillMirrorGroup(self.cap, self.client_xy, prof0.regions.skill, prof0.skill_items,
+                                           default_scale=ov.skill_scale, opacity=ov.skill_opacity, origin=tuple(ov.skill_pos))
         prof = self.cfg.profile()
         mirror_rows = prof.mirror_rows if (self.sess and prof) else []
         if mirror_rows:
@@ -184,6 +194,8 @@ class App:
             import win32gui
             fg = find_window(self.cfg.general.window_title)
             self._apply_show(bool(fg) and win32gui.GetForegroundWindow() == fg)
+        if self.skills:
+            self.skills.update()
         frame = self.cap.grab(self.sess.region)
         if frame is None:
             return
@@ -222,10 +234,14 @@ class App:
     def _apply_show(self, on):
         if self.overlay and self.overlay.isVisible() != bool(on):
             self.overlay.setVisible(bool(on))
-        if self.mirror:
-            self.mirror.set_visible(bool(on))
+        for grp in (self.mirror, self.skills):
+            if grp:
+                grp.set_visible(bool(on))
 
     # ------------------------------------------------------------ 배치 편집
+    def _groups(self):
+        return [g for g in (self.mirror, self.skills) if g]
+
     def edit_begin(self):
         if self.edit:
             return
@@ -233,14 +249,18 @@ class App:
             self._rebuild_overlays()
         ov = self.cfg.overlays
         self._apply_show(True)
-        self.edit = {"backup": (self.overlay.pos(), self.mirror.positions() if self.mirror else None, ov.mirror_opacity)}
+        self.edit = {"backup": (self.overlay.pos(), [g.positions() for g in self._groups()], ov.mirror_opacity, ov.skill_opacity)}
         self.overlay.set_edit(True)
-        if self.mirror:
-            self.mirror.set_edit(True)
-        bar = EditBar(ov.mirror_scale, ov.mirror_opacity, has_mirror=self.mirror is not None)
+        for g in self._groups():
+            g.set_edit(True)
+        bar = EditBar(ov.mirror_scale, ov.mirror_opacity, has_mirror=self.mirror is not None,
+                      skill_scale=ov.skill_scale, skill_opacity=ov.skill_opacity, has_skill=self.skills is not None)
         bar.scale_changed.connect(lambda v: self.mirror and self.mirror.set_scale_all(v))
         bar.opacity_changed.connect(lambda v: self.mirror and self.mirror.set_opacity_all(v))
         bar.stack.connect(lambda: self.mirror and self.mirror.stack_vertical())
+        bar.skill_scale_changed.connect(lambda v: self.skills and self.skills.set_scale_all(v))
+        bar.skill_opacity_changed.connect(lambda v: self.skills and self.skills.set_opacity_all(v))
+        bar.skill_stack.connect(lambda: self.skills and self.skills.stack_vertical())
         bar.saved.connect(lambda: self.edit_end(True)); bar.cancelled.connect(lambda: self.edit_end(False))
         bar.show(); self.edit["bar"] = bar
         self.edit["sample"] = QTimer(); self.edit["sample"].timeout.connect(self._edit_sample); self.edit["sample"].start(1500); self._edit_sample()
@@ -256,24 +276,30 @@ class App:
         ov, prof = self.cfg.overlays, self.cfg.profile()
         if save:
             ov.alert_pos = [self.overlay.x(), self.overlay.y()]
-            if self.mirror and prof:
-                by = {m.row: m for m in prof.mirror_rows}
-                for row, pos, sc in self.mirror.positions():
-                    if row in by:
-                        by[row].pos, by[row].scale = pos, sc
-                ov.mirror_opacity = round(self.edit["bar"].opacity.value(), 2)
-                ov.mirror_scale = round(self.edit["bar"].scale.value(), 2)
+            if prof:
+                if self.mirror:
+                    by = {m.row: m for m in prof.mirror_rows}
+                    for key, pos, sc in self.mirror.positions():
+                        if key[1] in by:
+                            by[key[1]].pos, by[key[1]].scale = pos, sc
+                if self.skills:
+                    by = {(s.region, s.slot): s for s in prof.skill_items}
+                    for key, pos, sc in self.skills.positions():
+                        k = (key[1], key[2])
+                        if k in by:
+                            by[k].pos, by[k].scale = pos, sc
+            bar = self.edit["bar"]
+            ov.mirror_opacity, ov.mirror_scale = round(bar.opacity.value(), 2), round(bar.scale.value(), 2)
+            ov.skill_opacity, ov.skill_scale = round(bar.skill_opacity.value(), 2), round(bar.skill_scale.value(), 2)
             self.cfg.save()
         else:
-            apos, mpos, mop = self.edit["backup"]
+            apos, gpos, mop, sop = self.edit["backup"]
             self.overlay.move(apos)
-            if self.mirror and mpos:
-                for it, (row, pos, sc) in zip(self.mirror.items, mpos):
-                    it.move(*pos); it.set_scale(sc)
-                self.mirror.set_opacity_all(mop)
+            for g, saved in zip(self._groups(), gpos):
+                g.restore(saved); g.set_opacity_all(sop if g is self.skills else mop)
         self.overlay.set_edit(False)
-        if self.mirror:
-            self.mirror.set_edit(False)
+        for g in self._groups():
+            g.set_edit(False)
         self.edit["bar"].close(); self.edit = None
         self._apply_show(self.active)
 
@@ -298,6 +324,23 @@ class App:
         w = WatchesWindow(self.cfg, self.cfg.profile(), self.sess.layout, frame, on_saved=self.start_session)
         self._show(w, "watches")
 
+    def open_skills(self):
+        prof = self.cfg.profile()
+        if not prof:
+            return
+        from ui.skills import SkillsWindow
+        cx, cy = self.client_xy
+        hwnd = find_window(self.cfg.general.window_title)
+        if hwnd:
+            cx, cy, _, _ = client_rect(hwnd); self.client_xy = (cx, cy)
+        frames = {}
+        for rg in prof.regions.skill:
+            x, y, w, h = rg["rect"]
+            f = self.cap.grab_sure((cx + x, cy + y, w, h))
+            frames[rg["id"]] = (f, x, y)
+        w = SkillsWindow(self.cfg, prof, frames, on_saved=self._rebuild_overlays, app=self)
+        self._show(w, "skills")
+
     def open_general(self):
         from ui.general import GeneralWindow
         w = GeneralWindow(self.cfg, on_saved=self._general_saved)
@@ -311,7 +354,7 @@ class App:
             self.sess.saver.enabled = self.cfg.general.diag_save
         self.notify("일반 설정 저장", "info", 2.0)
 
-    def calibrate(self, mode, pid=None):
+    def calibrate(self, mode, pid=None, redo_id=None):
         from ui.calibrate import Calibrator
         pid = pid or self.cfg.current
         prof = self.cfg.profiles.get(pid)
@@ -323,12 +366,14 @@ class App:
         self._was_active = self.cfg.general.active
         if self._was_active:
             self.toggle_active(False)                   # 드래그 중엔 오버레이·감시 끔
-        w = Calibrator(mode, self.cap, client_rect(hwnd), self.cfg, prof)
+        w = Calibrator(mode, self.cap, client_rect(hwnd), self.cfg, prof, redo_id=redo_id)
         w.destroyed.connect(lambda: self._after_calibrate(mode, pid))
         self._show(w, "calib")
 
     def _after_calibrate(self, mode, pid):
         self.cfg = Config.load()
+        if mode == "skill":
+            self._rebuild_overlays()
         if mode == "status" and self.cfg.profiles.get(pid) and self.cfg.profiles[pid].regions.status:
             if pid != self.cfg.current:
                 self.switch_profile(pid)

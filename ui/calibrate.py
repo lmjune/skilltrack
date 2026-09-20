@@ -30,9 +30,9 @@ HINT = {
 
 
 class Calibrator(QWidget):
-    def __init__(self, mode, cap, client, cfg, profile):
+    def __init__(self, mode, cap, client, cfg, profile, redo_id=None):
         super().__init__()
-        self.mode, self.cap, self.client, self.cfg, self.prof = mode, cap, client, cfg, profile
+        self.mode, self.cap, self.client, self.cfg, self.prof, self.redo_id = mode, cap, client, cfg, profile, redo_id
         self.start = self.end = None
         self.result = None            # 검출 결과 (화면 절대 좌표 박스 리스트, 설명)
         self.last_detect = 0.0
@@ -129,11 +129,17 @@ class Calibrator(QWidget):
             self.prof.regions.status = rel
         else:
             g = self.result["grid"]
-            n = len(self.prof.regions.skill) + 1
-            self.prof.regions.skill.append({
-                "id": f"skill{n}", "rect": rel,
-                "grid": {"xs": [int(v) - cx for v in g.xs], "ys": [int(v) - cy for v in g.ys], "w": int(g.w), "h": int(g.h)},
-            })
+            entry = {"rect": rel, "grid": {"xs": [int(v) - cx for v in g.xs], "ys": [int(v) - cy for v in g.ys], "w": int(g.w), "h": int(g.h)}}
+            if self.redo_id and any(r["id"] == self.redo_id for r in self.prof.regions.skill):
+                for r in self.prof.regions.skill:
+                    if r["id"] == self.redo_id:
+                        r.update(entry)                      # 같은 id 유지 → 표시 설정 그대로
+            else:
+                used = {r["id"] for r in self.prof.regions.skill}
+                n = 1
+                while f"skill{n}" in used:
+                    n += 1
+                self.prof.regions.skill.append({"id": f"skill{n}", **entry})
         self.cfg.save()
         print(f"저장: {self.mode} {rel}")
 
