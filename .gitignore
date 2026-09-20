@@ -1,8 +1,11 @@
 .venv/
 __pycache__/
 *.pyc
-profiles/*.json
-tests/fixtures/*.png
 tests/out/
 dist/
 build/
+assets/unknown/
+tests/fixtures/auto/
+tests/fixtures/*.png
+profiles/*.json
+profiles/layouts/
