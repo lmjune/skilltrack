@@ -66,18 +66,19 @@ def test_extension_switches_thresholds():
     """전장의 서곡: 기본 30초 미만 알림. 연장(이름이 길어짐)되면 120/60초 미만 알림."""
     w = Watch(FP_A, "서곡", alert_under=[30], base_width=40, alert_under_extended=[120, 60], cooldown=0)
     t = Tracker([w], debounce=1)
-    frames = [[row(FP_A, width=40)]] * 3 + [[row(FP_A, width=90)]] * 5
+    frames = [[row(FP_A, width=40)]] * 3 + [[row(FP_A, width=90)]] * 6
     secs = [{0: 40}, {0: 25}, {0: 20},            # 기본: 30 미만 1회
-            {0: 500}, {0: 119}, {0: 100}, {0: 59}, {0: 10}]   # 연장 후: 120, 60
-    assert run(t, frames, secs) == [("under", 30), ("extended", None), ("resync", 500), ("under", 120), ("under", 60)]
+            {0: 500}, {0: 500}, {0: 119}, {0: 100}, {0: 59}, {0: 10}]   # 연장(500 2프레임) 후: 120, 60
+    assert run(t, frames, secs) == [("under", 30), ("extended", None), ("under", 120), ("under", 60)]
+
 
 
 def test_extension_end_returns_to_base():
     w = Watch(FP_A, "서곡", alert_under=[30], base_width=40, alert_under_extended=[120], cooldown=0)
     t = Tracker([w], debounce=1)
-    frames = [[row(FP_A, width=40)], [row(FP_A, width=90)], [row(FP_A, width=90)], [row(FP_A, width=40)], [row(FP_A, width=40)]]
-    secs = [{0: 100}, {0: 300}, {0: 100}, {0: 100}, {0: 20}]
-    assert run(t, frames, secs) == [("extended", None), ("resync", 300), ("under", 120), ("unextended", None), ("under", 30)]
+    frames = [[row(FP_A, width=40)], [row(FP_A, width=90)], [row(FP_A, width=90)], [row(FP_A, width=100)], [row(FP_A, width=40)], [row(FP_A, width=40)]]
+    secs = [{0: 100}, {0: 300}, {0: 300}, {0: 100}, {0: 100}, {0: 20}]
+    assert run(t, frames, secs) == [("extended", None), ("under", 120), ("unextended", None), ("under", 30)]
 
 
 def test_timer_keeps_running_when_unreadable():
@@ -95,7 +96,8 @@ def test_resync_when_buff_refreshed():
     t = Tracker([Watch(FP_A, "A", alert_under=[30], cooldown=0)], debounce=1)
     out = []
     out += t.update([row(FP_A, True)], {0: 20}, now=0.0)       # 20초 → 30 미만 알림
-    out += t.update([row(FP_A, True)], {0: 300}, now=1.0)      # 갱신됨 → 재동기화, 임계값 초기화
+    out += t.update([row(FP_A, True)], {0: 300}, now=1.0)      # 후보
+    out += t.update([row(FP_A, True)], {0: 300}, now=1.5)      # 확인 → 재동기화, 임계값 초기화
     for k in range(2, 290):
         out += t.update([row(FP_A, True)], {}, now=float(k))   # 인식 없이 흐름
     kinds = [(e.kind, e.value) for e in out]
@@ -171,3 +173,43 @@ def test_keep_master_toggle():
     for k in range(20, 40):
         out += t.update([row(FP_A, False)], {}, now=float(k))
     assert [e.kind for e in out] == ["keep"]
+
+
+def test_time_keeps_counting_while_state_unknown():
+    """밝은 배경 등으로 활성 판정이 '모름'이어도 시간 추정과 임계값 알림은 계속된다."""
+    t = Tracker([Watch(FP_A, "A", alert_under=[30], cooldown=0)], debounce=1)
+    out = t.update([row(FP_A, True)], {0: 40}, now=0.0)
+    for k in range(1, 25):
+        out += t.update([row(FP_A, None)], {}, now=float(k))          # 모름 + 못 읽음
+    assert [(e.kind, e.value) for e in out] == [("under", 30)]
+    assert 10 <= t.tracks[0].estimate(now=24.0) <= 17
+
+
+def test_time_read_while_state_unknown():
+    """모름 상태에서도 시간이 읽히면 그 값을 쓴다."""
+    t = Tracker([Watch(FP_A, "A", alert_under=[30], cooldown=0)], debounce=1)
+    out = t.update([row(FP_A, True)], {0: 100}, now=0.0)
+    out += t.update([row(FP_A, None)], {0: 20}, now=1.0)
+    assert [(e.kind, e.value) for e in out] == [("under", 30)]
+
+
+def test_time_spike_is_ignored():
+    """이동·화면전환으로 한 프레임 값이 튀어도(늘어나도) 재동기화·임계값에 영향 없다."""
+    t = Tracker([Watch(FP_A, "A", alert_under=[30], cooldown=0)], debounce=1)
+    out = t.update([row(FP_A, True)], {0: 40}, now=0.0)
+    out += t.update([row(FP_A, True)], {0: 300}, now=0.2)
+    out += t.update([row(FP_A, True)], {0: 39}, now=0.4)
+    for k in range(2, 15):
+        out += t.update([row(FP_A, True)], {0: 40 - k}, now=float(k) * 0.2 + 0.4)
+    kinds = [(e.kind, e.value) for e in out]
+    assert ("resync", 300) not in kinds
+    assert ("under", 30) in kinds
+
+
+def test_real_refresh_needs_two_frames():
+    """진짜 연장(리필)은 늘어난 값이 2프레임 연속이면 재동기화."""
+    t = Tracker([Watch(FP_A, "A", alert_under=[30], cooldown=0)], debounce=1)
+    out = t.update([row(FP_A, True)], {0: 20}, now=0.0)
+    out += t.update([row(FP_A, True)], {0: 300}, now=0.2)
+    out += t.update([row(FP_A, True)], {0: 300}, now=0.4)
+    assert ("resync", 300) in [(e.kind, e.value) for e in out]

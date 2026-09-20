@@ -19,7 +19,7 @@ from core.status import parse_rows
 from core.digits import GlyphLib, read_time
 from core.tracker import Tracker, Watch, Event
 from core.pixelwatch import read_site, Reading
-from core import layout_store
+from core import layout_store, variants
 
 ROOT = Path(__file__).parent.parent
 CALIB_FRAMES = 10
@@ -130,6 +130,8 @@ class Session:
                                  base_width=self.sites[i].mask.shape[1] if i in self.sites else None, **opts))
         self.tracker = Tracker(watches, debounce=debounce)
         self.prev_time, self.unk_n = {}, {}
+        self._variants = None
+        self.last_read = {}          # row → 마지막으로 시간을 읽은 시각
 
     # ------------------------------------------------------------ 준비
     def _load_or_calibrate(self, recalib):
@@ -163,6 +165,10 @@ class Session:
         states = parse_rows(frame, layout)
         layout_store.save(self.pid, layout, states, self.rect, frame)
         _, L, fps, sites = layout_store.load(self.pid)
+        missing = [i for i in range(len(L.rows)) if i not in sites]
+        if missing:
+            # 밝은 배경에선 비활성(회색) 글자를 못 잘라 그 행의 획 자리가 안 잡힌다 → 그 행은 판정 불가
+            self.notes.append(f"⚠ 행 {missing} 의 획 자리를 못 잡음 (밝은 곳에서 검출됨). 어두운 곳에서 '레이아웃 다시'를 권장")
         self.notes.append(f"검출 완료: {len(L.rows)}행 저장")
         return L, fps, sites
 
@@ -176,6 +182,9 @@ class Session:
                 rd = read_site(frame, self.sites[s.index])
                 readings[s.index] = rd
                 s.active = {"on": True, "off": False}.get(rd.state)
+            else:
+                # 획 자리가 없는 행: 파싱으로 대신. 255 획이 있으면 활성, 없으면 모름 (밝은 배경에선 비활성 확정 불가)
+                s.active = True if (s.name_range and s.active) else None
 
         for i, rd in readings.items():
             self.unk_n[i] = self.unk_n.get(i, 0) + 1 if rd.state == "unknown" else 0
@@ -183,6 +192,7 @@ class Session:
                 notes.append(f"행{i} 판정 불가 지속 → 프레임 저장 {n}")
 
         secs, times = {}, {}
+        now = time.time()
         for s in states:
             had, now_has = self.prev_time.get(s.index, False), s.time_img is not None
             if had and not now_has and s.active and (n := self.saver.save(frame, f"timelost_row{s.index}")):
@@ -194,6 +204,8 @@ class Session:
             if not rr.plausible:
                 continue
             secs[s.index], times[s.index] = rr.seconds, rr.text
+            if rr.seconds is not None:
+                self.last_read[s.index] = now
             if rr.seconds is not None and self.layout.time_right is None:
                 self.layout.time_right = self.layout.rows[s.index].text[0] + s.time_range[1]
                 layout_store.update_time_right(self.pid, self.layout.time_right)
@@ -204,6 +216,34 @@ class Session:
                 if (n := self.saver.save(frame, f"unknown_row{s.index}")):
                     notes.append(f"  프레임 저장 {n}")
 
+        # 접미어 변형: 이름이 기준 폭보다 길면 그 뒤 획을 잘라 알려진 접미어와 비교
+        for s in states:
+            site = self.sites.get(s.index)
+            if site is None or s.name_range is None or s.active is not True:
+                continue
+            base_w = site.mask.shape[1]
+            if s.name_width < base_w + 10:
+                s.extended = False; continue
+            from core.strokes import stroke_masks
+            w_, g_, _ = stroke_masks(s.name_img)
+            suffix = (w_ | g_)[:, base_w:]
+            if suffix.sum() < 10:
+                s.extended = False; continue
+            if self._variants is None:
+                self._variants = variants.load(self.pid, None)
+            ext, key, new = variants.classify(self.pid, s.index, suffix, s.name_img[:, base_w:], self._variants)
+            if new:
+                self._variants = variants.load(self.pid, None)
+                notes.append(f"행{s.index}: 새 이름 접미어 저장 ({key}). 감시 항목에서 '연장으로 취급' 여부를 정하세요")
+            s.extended = ext
+
+        # 진단: 활성 행인데 10초 넘게 시간을 못 읽으면 프레임 저장 (왜 못 읽는지 볼 수 있게)
+        for s in states:
+            if s.active is True and s.index in self.last_read and now - self.last_read[s.index] > 10 and secs.get(s.index) is None:
+                if (n := self.saver.save(frame, f"timelost_row{s.index}")):
+                    notes.append(f"행{s.index} 시간 {now - self.last_read[s.index]:.0f}초째 못 읽음 → 프레임 저장 {n}")
+                    self.last_read[s.index] = now      # 10초마다 한 번만
+
         events = self.tracker.update(states, secs)
         for ev in events:
             if ev.kind == "lost" and (n := self.saver.save(frame, f"lost_row{ev.label[1:]}")):
@@ -212,6 +252,10 @@ class Session:
 
 
 def event_text(ev: Event) -> str:
+    v = ev.value
+    if ev.kind == "under":
+        return f"{v}초 미만"
+    if ev.kind == "resync":
+        return f"갱신됨 → {v // 60}분 {v % 60}초" if v is not None else "갱신됨"
     return {"off": "꺼짐", "on": "켜짐", "lost": "목록에서 사라짐", "found": "다시 보임",
-            "under": f"{ev.value}초 미만", "extended": "연장됨", "unextended": "연장 끝",
-            "resync": f"시간 재동기화 → {ev.value}초", "keep": "꺼진 상태 유지 중 (켜세요)"}[ev.kind]
+            "extended": "연장됨", "unextended": "연장 끝", "keep": "꺼진 상태 유지 중 (켜세요)"}.get(ev.kind, ev.kind)

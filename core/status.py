@@ -35,6 +35,7 @@ class RowState:
     time_img: np.ndarray | None
     name_range: tuple | None = None   # 텍스트 rect 안에서 이름의 (x0, x1)
     time_range: tuple | None = None   # 시간의 (x0, x1)
+    extended: bool | None = None      # 접미어 판정 결과 (세션이 채움). None 이면 폭 기준
 
     @property
     def name_width(self):

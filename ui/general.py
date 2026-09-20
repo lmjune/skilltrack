@@ -72,6 +72,7 @@ class GeneralWindow(QWidget):
         self.fps = QSpinBox(); self.fps.setRange(1, 30); self.fps.setValue(g.fps); self.fps.setFixedWidth(80)
         l2.addLayout(field("초당 확인 횟수", self.fps, "5면 충분. 높이면 CPU 사용 증가"))
         self.hide_inactive = QCheckBox("게임 창이 뒤로 가면 오버레이 숨김"); self.hide_inactive.setChecked(g.hide_when_inactive); l2.addWidget(self.hide_inactive)
+        self.smooth = QCheckBox("스킬 아이콘 확대를 부드럽게 (끄면 픽셀 그대로, 각짐)"); self.smooth.setChecked(cfg.overlays.skill_smooth); l2.addWidget(self.smooth)
         self.diag = QCheckBox("문제 진단용 프레임 자동 저장 (tests/fixtures/auto)"); self.diag.setChecked(g.diag_save); l2.addWidget(self.diag)
         self.cap = QCheckBox("오버레이를 스크린샷에 포함 (가이드 작성용 — 평소엔 끄세요)"); self.cap.setChecked(g.capturable); l2.addWidget(self.cap)
         v.addWidget(c2)
@@ -88,6 +89,7 @@ class GeneralWindow(QWidget):
         g.hotkey_toggle, g.hotkey_settings, g.hotkey_edit = self.hk_toggle.text(), self.hk_settings.text(), self.hk_edit.text()
         g.window_title, g.fps = self.title.text().strip() or g.window_title, self.fps.value()
         g.hide_when_inactive, g.diag_save, g.capturable = self.hide_inactive.isChecked(), self.diag.isChecked(), self.cap.isChecked()
+        self.cfg.overlays.skill_smooth = self.smooth.isChecked()
         self.cfg.save()
         if self.on_saved:
             self.on_saved()

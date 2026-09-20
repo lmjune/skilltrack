@@ -69,6 +69,7 @@ class Overlays:
     skill_pos: list = field(default_factory=lambda: [1500, 1600])      # 스킬 표시 기본 시작 위치
     skill_scale: float = 2.0
     skill_opacity: float = 0.95
+    skill_smooth: bool = True                                          # 스킬 아이콘 확대 시 부드럽게 (끄면 픽셀 그대로)
 
 
 @dataclass

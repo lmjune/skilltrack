@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from core.config import Config, WatchCfg, MirrorRow
 from core.status import parse_rows
+from core import variants
 from ui import theme
 
 
@@ -45,9 +46,10 @@ def muted(text):
 
 
 class RowCard(QFrame):
-    def __init__(self, row, thumb, w: WatchCfg, m: MirrorRow | None):
+    def __init__(self, row, thumb, w: WatchCfg, m: MirrorRow | None, pid=None):
         super().__init__()
-        self.row = row
+        self.row, self.pid = row, pid
+        self.var_checks = []
         self.setObjectName("card")
         v = QVBoxLayout(self); v.setContentsMargins(16, 12, 16, 12); v.setSpacing(8)
 
@@ -86,6 +88,23 @@ class RowCard(QFrame):
 
         self.alert_on = QCheckBox("켜지는 순간도 알림"); self.alert_on.setChecked(w.alert_on); self.alert_on.setObjectName("small")
         d.addLayout(hbox(self.alert_on, muted("보통은 필요 없음")))
+
+        # 이름 접미어 변형: 자동 저장된 것들 중 '연장으로 취급' 선택
+        vs = variants.load(pid, None) if pid else []
+        if vs:
+            d.addWidget(muted("이름 뒤에 붙는 글자 (자동 수집, 모든 버프 공통). 시간이 늘어나는 연장이면 체크 → 연장 임계값 사용"))
+            for vinfo in vs:
+                png = variants._folder(pid) / f"{vinfo['key']}.png"
+                pic = QLabel(); pic.setObjectName("thumb")
+                if png.exists():
+                    import cv2 as _cv
+                    img = _cv.imread(str(png))
+                    if img is not None:
+                        pic.setPixmap(to_pixmap(img, 2))
+                cb = QCheckBox("연장으로 취급"); cb.setObjectName("small"); cb.setChecked(vinfo["extends"])
+                lb = QLineEdit(vinfo["label"]); lb.setPlaceholderText("메모 (예: 투안의 노래)"); lb.setFixedWidth(160)
+                self.var_checks.append((vinfo["key"], cb, lb))
+                d.addLayout(hbox(pic, cb, lb, spacing=12))
         v.addWidget(self.detail)
 
         self.btn.toggled.connect(self._toggle); self.enabled.toggled.connect(self._toggle)
@@ -134,7 +153,7 @@ class WatchesWindow(QWidget):
             a, b = (st.name_range if st and st.name_range else (0, min(tw, 140)))
             thumb = np.concatenate([frame[iy:iy + ih, ix:ix + iw], np.zeros((ih, 4, 3), np.uint8),
                                     frame[ty:ty + th, tx + a:tx + b + 1][:ih]], axis=1)
-            card = RowCard(i, to_pixmap(thumb), prof.watches.get(i, WatchCfg(enabled=False)), mirrors.get(i))
+            card = RowCard(i, to_pixmap(thumb), prof.watches.get(i, WatchCfg(enabled=False)), mirrors.get(i), pid=cfg.current)
             self.cards.append(card); v.addWidget(card)
 
         sec = QLabel("공통"); sec.setObjectName("section"); v.addSpacing(8); v.addWidget(sec)
@@ -159,6 +178,9 @@ class WatchesWindow(QWidget):
 
     def _save(self):
         prof = self.prof
+        for c in self.cards:
+            for key, cb, lb in c.var_checks:
+                variants.set_flags(self.cfg.current, c.row, key, label=lb.text().strip(), extends=cb.isChecked())
         prof.watches = {c.row: c.watch_cfg() for c in self.cards if c.enabled.isChecked()}
         prof.mirror_rows = [m for c in self.cards if (m := c.mirror_cfg())]
         self.cfg.general.sound_file = self.sound.text().strip()

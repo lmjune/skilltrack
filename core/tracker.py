@@ -63,6 +63,8 @@ class _Track:
     last_at: float = 0.0
     off_since: float | None = None     # 확정 '꺼짐' 시작 시각 (유지 필수용)
     last_keep: float = -1e9
+    jump_cand: int | None = None       # 값이 갑자기 늘어난 후보 (재동기화 전 2프레임 확인)
+    jump_n: int = 0
 
     def estimate(self, now):
         if self.last_sec is None:
@@ -98,13 +100,14 @@ class Tracker:
                 events.append(Event("found", t.watch.label, at=now))
             t.missing_n = 0
 
-            if row.active is None:            # 모름 → 판단 보류
-                continue
-            if row.active == t.pending:
-                t.pending_n += 1
-            else:
-                t.pending, t.pending_n = row.active, 1
-            if t.pending_n >= self.debounce and t.pending != t.active:
+            # 모름(None) 프레임은 켜짐/꺼짐 판정만 보류. 시간·연장 처리는 아래에서 계속한다
+            # (밝은 배경에서 오래 모름이어도 시간 추정과 임계값 알림이 멈추면 안 됨)
+            if row.active is not None:
+                if row.active == t.pending:
+                    t.pending_n += 1
+                else:
+                    t.pending, t.pending_n = row.active, 1
+            if row.active is not None and t.pending_n >= self.debounce and t.pending != t.active:
                 prev, t.active = t.active, t.pending
                 if prev is not None:
                     kind = "on" if t.active else "off"
@@ -127,7 +130,7 @@ class Tracker:
             if t.watch.base_width and row.name_width and t.active:
                 if row.name_width < t.watch.base_width - 4:
                     t.watch.base_width = row.name_width      # 연장된 채로 캘리브레이션했던 경우: 짧은 쪽이 기준
-                ext = row.name_width >= t.watch.base_width + EXT_MARGIN
+                ext = row.extended if row.extended is not None else (row.name_width >= t.watch.base_width + EXT_MARGIN)
                 if ext == t.ext_pending:
                     t.ext_n += 1
                 else:
@@ -137,24 +140,29 @@ class Tracker:
                     if prev is not None:
                         events += self._fire(t, Event("extended" if t.extended else "unextended", t.watch.label, at=now), now)
                         t.fired_under.clear()
+                        t.last_sec = None; t.jump_cand = None    # 연장 전후 시간이 크게 달라짐 → 다음 값을 첫 관측으로
 
             thresholds = t.watch.alert_under
             if t.extended and t.watch.alert_under_extended is not None:
                 thresholds = t.watch.alert_under_extended
 
-            sec = seconds_of.get(row.index)
-            if not t.active:
-                t.last_sec = None
-            elif sec is not None:
+            raw = seconds_of.get(row.index)
+            if t.active is False:                          # 확정 꺼짐일 때만 타이머 삭제 (모름(None)은 유지)
+                t.last_sec = None; t.jump_cand = None
+            elif raw is not None:
                 est = t.estimate(now)
-                if est is not None and sec > est + RESYNC_TOL:
-                    # 시간이 늘었다 = 버프 갱신/연장 → 알리고 임계값을 다시 울릴 수 있게
-                    events.append(Event("resync", t.watch.label, sec, at=now))
+                if est is None or raw <= est + RESYNC_TOL:
+                    t.last_sec, t.last_at = raw, now    # 첫 관측이거나 정상(줄었음/오차 이내) → 조용히 갱신
+                    t.jump_cand = None
+                elif t.jump_cand is not None and abs(raw - t.jump_cand) <= max(2, RESYNC_TOL):
+                    # 늘어난 값이 2프레임 연속 = 진짜 연장/갱신. (한 프레임만 튄 건 이동·화면전환 오독 → 무시)
+                    events.append(Event("resync", t.watch.label, raw, at=now))
                     t.fired_under.clear()
-                t.last_sec, t.last_at = sec, now       # 줄어든 건 그냥 최신 관측으로 갱신
-            else:
-                sec = t.estimate(now)                  # 못 읽은 프레임: 추정값으로 판단
-            if sec is not None and t.active:
+                    t.last_sec, t.last_at = raw, now; t.jump_cand = None
+                else:
+                    t.jump_cand = raw                   # 후보만 기록, 이번 프레임은 추정 유지
+            sec = t.estimate(now) if t.active is not False else None
+            if sec is not None:
                 t.seconds = sec
                 for thr in sorted(thresholds, reverse=True):
                     if sec < thr and thr not in t.fired_under:

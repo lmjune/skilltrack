@@ -31,7 +31,9 @@ class ProfileCard(QFrame):
         v.addLayout(head)
 
         has_region = bool(prof.regions.status)
-        has_layout = layout_store.load(pid) is not None
+        saved = layout_store.load(pid)
+        has_layout = saved is not None
+        partial = saved is not None and len(saved[3]) < len(saved[1].rows)   # 획 자리 빠진 행 있음
         st = QHBoxLayout(); st.setSpacing(18)
         st.addWidget(QLabel(("✓" if has_region else "✗") + " 상태창 영역"))
         st.addWidget(QLabel(("✓" if has_layout else "✗") + " 레이아웃" + (f" ({sess_rows}행)" if current and sess_rows else "")))
@@ -43,6 +45,8 @@ class ProfileCard(QFrame):
             hint = "다음: [영역 설정] — 시간이 표시되는 버프 하나 켜고, 어두운 곳에서 상태창을 드래그"
         elif not has_layout:
             hint = "다음: 이 캐릭터로 전환하면 레이아웃을 자동으로 잡습니다 (어두운 곳에서)" if not current else "레이아웃을 잡는 중이거나 실패했습니다. 어두운 곳에서 [레이아웃 다시]"
+        elif partial:
+            hint = f"⚠ 밝은 곳에서 잡혀 일부 행({len(saved[1].rows) - len(saved[3])}개)을 판정 못 합니다. 어두운 곳에서 [레이아웃 다시]"
         elif current and home.app.mismatch:
             hint = "⚠ 저장된 항목과 지금 상태창이 다릅니다. 고정 목록을 바꿨으면 [레이아웃 다시], 다른 캐릭터면 그 캐릭터로 전환"
         elif not n_watch:

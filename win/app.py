@@ -25,7 +25,7 @@ from ui import theme
 from ui.edit_bar import EditBar
 
 LEVEL = {"off": ("danger", 6), "keep": ("danger", 5), "under": ("warn", 5), "lost": ("warn", 5),
-         "on": ("ok", 3), "extended": ("info", 3), "unextended": ("info", 3)}
+         "on": ("ok", 3), "extended": ("info", 3), "unextended": ("info", 3), "resync": ("ok", 3)}
 
 
 def make_icon(color="#5b8cff", paused=False):
@@ -174,7 +174,7 @@ class App:
         prof0 = self.cfg.profile()
         if prof0 and prof0.skill_items and prof0.regions.skill:
             self.skills = SkillMirrorGroup(self.cap, self.client_xy, prof0.regions.skill, prof0.skill_items,
-                                           default_scale=ov.skill_scale, opacity=ov.skill_opacity, origin=tuple(ov.skill_pos))
+                                           default_scale=ov.skill_scale, opacity=ov.skill_opacity, origin=tuple(ov.skill_pos), smooth=ov.skill_smooth)
         prof = self.cfg.profile()
         mirror_rows = prof.mirror_rows if (self.sess and prof) else []
         if mirror_rows:
@@ -194,12 +194,22 @@ class App:
         if self.cfg.general.hide_when_inactive and not self.edit:
             import win32gui
             fg = find_window(self.cfg.general.window_title)
-            self._apply_show(bool(fg) and win32gui.GetForegroundWindow() == fg)
-        if self.skills:
-            self.skills.update()
-        frame = self.cap.grab(self.sess.region)
-        if frame is None:
+            front = bool(fg) and win32gui.GetForegroundWindow() == fg
+            self._apply_show(front)
+            if not front:
+                return          # 게임이 뒤에 있으면 인식도 쉼 (다른 창 픽셀을 읽지 않게). 시간은 추정 타이머가 벽시계로 이어감
+        # 한 틱에 전체 화면을 한 번만 캡처해서 잘라 쓴다.
+        # (dxcam 은 새 프레임이 없으면 None 을 주는데, 영역별로 따로 grab 하면 앞의 grab 이 '새 프레임'을
+        #  소비해 뒤의 상태창 grab 이 자주 None → 처리가 드문드문 → 시간 추정이 어긋남)
+        full = self.cap.grab()
+        if full is None:
             return
+        x, y, w, h = self.sess.region
+        frame = full[y:y + h, x:x + w]
+        if frame.shape[0] != h or frame.shape[1] != w:
+            return
+        if self.skills:
+            self.skills.update(full)
         r = self.sess.process(frame)
         if self.mirror:
             self.mirror.update_from(frame, r)
@@ -351,6 +361,8 @@ class App:
         self.cfg = Config.load()
         self._bind_hotkeys()
         set_capturable(self.cfg.general.capturable)
+        if self.skills:
+            self._rebuild_overlays()
         if self.sess:
             self.timer.start(int(1000 / self.cfg.general.fps))
             self.sess.saver.enabled = self.cfg.general.diag_save

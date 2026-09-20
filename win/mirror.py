@@ -13,10 +13,11 @@ GAP = 6
 
 
 class MirrorItem(EditableOverlay):
-    def __init__(self, key, title, scale, opacity, base_size=(40, 40), dim_inactive=True):
+    def __init__(self, key, title, scale, opacity, base_size=(40, 40), dim_inactive=True, smooth=False):
         super().__init__()
         self._init_editable(title)
         self.key, self.pix, self.active, self._ck = key, None, True, None
+        self.smooth = smooth
         self.base_w, self.base_h, self.dim_inactive = base_size[0], base_size[1], dim_inactive
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAttribute(Qt.WA_ShowWithoutActivating)
@@ -50,7 +51,7 @@ class MirrorItem(EditableOverlay):
 
     def paintEvent(self, _):
         p = QPainter(self)
-        p.setRenderHint(QPainter.SmoothPixmapTransform, False)
+        p.setRenderHint(QPainter.SmoothPixmapTransform, self.smooth)
         self._paint_edit_frame(p)
         if self.pix:
             p.setOpacity(1.0 if self.active or not self.dim_inactive else 0.35)
