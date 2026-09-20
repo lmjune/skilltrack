@@ -38,7 +38,6 @@ QLineEdit, QSpinBox, QDoubleSpinBox {{
 QLineEdit:focus, QSpinBox:focus {{ border-color: {ACCENT}; }}
 QLineEdit#ghost {{ background: transparent; border: 1px solid transparent; font-size: 15px; font-weight: 600; }}
 QLineEdit#ghost:hover, QLineEdit#ghost:focus {{ border-color: {BORDER}; background: #0b0d11; }}
-QSpinBox::up-button, QSpinBox::down-button {{ width: 0; border: none; }}
 
 QCheckBox {{ spacing: 10px; padding: 4px 0; }}
 QCheckBox::indicator {{ width: 36px; height: 20px; border-radius: 10px; background: {BORDER}; }}

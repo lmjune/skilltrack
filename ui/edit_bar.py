@@ -16,7 +16,9 @@ class EditBar(QWidget):
 
     def __init__(self, scale=2.0, opacity=0.95, has_mirror=True, skill_scale=2.0, skill_opacity=0.95, has_skill=False):
         super().__init__()
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
+        # 보통 창(제목줄 있음) + 항상 위. 테두리 없는 Tool 창은 게임 위에서 클릭해도 활성화가 안 돼 입력을 못 받는 경우가 있다
+        self.setWindowFlags(Qt.Window | Qt.WindowStaysOnTopHint | Qt.WindowTitleHint | Qt.CustomizeWindowHint)
+        self.setWindowTitle("배치 편집")
         self.setObjectName("card")
         v = QVBoxLayout(self); v.setContentsMargins(18, 14, 18, 14); v.setSpacing(10)
         t = QLabel("오버레이 배치 편집"); t.setObjectName("title"); v.addWidget(t)
@@ -39,7 +41,12 @@ class EditBar(QWidget):
         sc = QDoubleSpinBox(); sc.setRange(0.5, 6.0); sc.setSingleStep(0.1); sc.setValue(scale); sc.setFixedWidth(80); sc.valueChanged.connect(sig_scale.emit); row.addWidget(sc)
         row.addWidget(QLabel("투명도"))
         op = QDoubleSpinBox(); op.setRange(0.2, 1.0); op.setSingleStep(0.05); op.setValue(opacity); op.setFixedWidth(80); op.valueChanged.connect(sig_opacity.emit); row.addWidget(op)
+        for w in (sc, op):
+            w.setFocusPolicy(Qt.StrongFocus); w.setButtonSymbols(QDoubleSpinBox.UpDownArrows)
         st = QPushButton("세로로 정리"); st.clicked.connect(sig_stack.emit); row.addWidget(st)
+        if not enabled:
+            hint = QLabel("표시 항목 없음 — " + ("감시 항목 → 설정 → '화면에 크게 표시'" if label == "버프 표시" else "스킬 표시에서 슬롯 체크"))
+            hint.setObjectName("muted"); row.addWidget(hint)
         row.addStretch()
         for w in (sc, op, st):
             w.setEnabled(enabled)

@@ -263,7 +263,7 @@ class App:
         bar.skill_opacity_changed.connect(lambda v: self.skills and self.skills.set_opacity_all(v))
         bar.skill_stack.connect(lambda: self.skills and self.skills.stack_vertical())
         bar.saved.connect(lambda: self.edit_end(True)); bar.cancelled.connect(lambda: self.edit_end(False))
-        bar.show(); self.edit["bar"] = bar
+        bar.show(); bar.raise_(); bar.activateWindow(); self.edit["bar"] = bar
         self.edit["sample"] = QTimer(); self.edit["sample"].timeout.connect(self._edit_sample); self.edit["sample"].start(1500); self._edit_sample()
 
     def _edit_sample(self):
