@@ -16,7 +16,7 @@ from PySide6.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QMessageBox
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from core.config import Config, CONFIG_FILE
 from win.session import Session, FrameSaver, event_text, ROOT
-from win.alert_overlay import AlertOverlay
+from win.alert_overlay import AlertOverlay, set_capturable
 from win.status_overlay import StatusMirrorGroup, RowOpt
 from win.skill_overlay import SkillMirrorGroup
 from win.window import find_window, client_rect
@@ -65,6 +65,7 @@ class App:
 
         self.hk = Hotkeys(self.qt)
         self._bind_hotkeys()
+        set_capturable(self.cfg.general.capturable)
 
         self.timer = QTimer(); self.timer.timeout.connect(self.tick)
         self.start_session()
@@ -349,6 +350,7 @@ class App:
     def _general_saved(self):
         self.cfg = Config.load()
         self._bind_hotkeys()
+        set_capturable(self.cfg.general.capturable)
         if self.sess:
             self.timer.start(int(1000 / self.cfg.general.fps))
             self.sess.saver.enabled = self.cfg.general.diag_save

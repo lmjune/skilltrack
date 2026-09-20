@@ -30,6 +30,7 @@ class General:
     hotkey_settings: str = "F10"           # 홈 화면
     hotkey_edit: str = "Ctrl+F10"          # 배치 편집
     hide_when_inactive: bool = True        # 켜져 있어도 게임 창이 뒤로 가면 오버레이 숨김
+    capturable: bool = False               # 오버레이를 스크린샷에 포함 (가이드 작성용). 평소엔 꺼둘 것
 
 
 @dataclass

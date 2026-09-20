@@ -15,6 +15,17 @@ from PySide6.QtGui import QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import QWidget
 
 WDA_EXCLUDEFROMCAPTURE = 0x11
+CAPTURABLE = {"on": False}      # True 면 오버레이가 스크린샷에 찍힘 (가이드 작성용). 일반 설정에서 토글
+_ALL = []                        # 살아 있는 오버레이 창들 (설정 바뀔 때 일괄 적용)
+
+
+def set_capturable(on: bool):
+    CAPTURABLE["on"] = bool(on)
+    for w in list(_ALL):
+        try:
+            w._apply_affinity()
+        except RuntimeError:
+            _ALL.remove(w)
 
 LEVEL_COLOR = {          # 배경, 글자
     "danger": (QColor(180, 30, 30, 230), QColor(255, 255, 255)),
@@ -48,16 +59,20 @@ class EditableOverlay(QWidget):
         self.edit_title = title
         self.edit_mode = False
         self._drag = None
+        _ALL.append(self)
+
+    def _apply_affinity(self):
+        try:
+            ctypes.windll.user32.SetWindowDisplayAffinity(int(self.winId()), 0 if CAPTURABLE["on"] else WDA_EXCLUDEFROMCAPTURE)
+        except Exception:
+            pass
 
     def _apply_flags(self):
         vis = self.isVisible()
         self.setWindowFlags(FLAGS_EDIT if self.edit_mode else FLAGS_RUN)
         if vis:
             self.show()
-        try:
-            ctypes.windll.user32.SetWindowDisplayAffinity(int(self.winId()), WDA_EXCLUDEFROMCAPTURE)
-        except Exception:
-            pass
+        self._apply_affinity()
 
     def set_edit(self, on: bool):
         self.edit_mode = on
