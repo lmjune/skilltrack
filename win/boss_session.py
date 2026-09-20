@@ -23,7 +23,16 @@ from core.digits import GlyphLib
 from win.session import FrameSaver
 
 ROOT = Path(__file__).parent.parent
-BOSS_RECT = (1500, 1850, 850, 250)      # 클라이언트 기준 (4K, UI 100%). 바 1657~2178 × 1962~2011 + 띠 35행 위 를 여유 있게
+BOSS_RECT = (1500, 1850, 850, 250)      # 4K 기준. 바 1657~2178 × 1962~2011 + 띠 35행 위 를 여유 있게
+
+
+def boss_rect(client_w, client_h):
+    """바는 화면 가로 중앙·하단 고정 (4K 실측: 중심 x≈1918, 이름 y=2160−180). 다른 해상도는 같은 상대 위치로 가정 (미검증)."""
+    if (client_w, client_h) == (3840, 2160):
+        return BOSS_RECT
+    x = max(0, client_w // 2 - 425)
+    y = max(0, client_h - 310)
+    return (x, y, min(850, client_w - x), min(250, client_h - y))
 ICON_DIR = ROOT / "assets" / "boss_icons"
 BOSSES_FILE = ICON_DIR / "bosses.json"    # {이름 해시: {"strip": true, "pct_sample": "…"}} 띠 패널이 한 번이라도 보인 보스
 

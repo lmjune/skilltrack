@@ -17,7 +17,7 @@ import cv2
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from win.session import Session, event_text
-from win.boss_session import BossSession, BOSS_RECT, debuff_event_text
+from win.boss_session import BossSession, boss_rect, debuff_event_text
 from win.window import find_window, client_rect
 from win.capture import Capture
 
@@ -78,7 +78,9 @@ def main(pick, recalib, debug, boss=False, boss_only=False):
     if boss or boss_only:
         bs = BossSession(verbose=True, learn="--learn" in sys.argv)   # 감시 목록 없음: 인식만. --learn 이면 모르는 아이콘 등록
         con.log(f"보스 띠 감시 (아이콘 {len(bs.icons.items)}종 등록됨)")
-    bx, by, bw, bh = BOSS_RECT
+    bx, by, bw, bh = boss_rect(cw, ch)
+    if bs is not None:
+        con.log(f"화면 {cw}×{ch}, 보스 바 영역 {(bx, by, bw, bh)}")
     use_full = bs is not None                  # 영역 둘 이상이면 전체 1회 캡처 후 자름 (dxcam 새 프레임 소비 문제)
 
     while True:

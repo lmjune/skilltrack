@@ -19,7 +19,7 @@ from win.session import Session, FrameSaver, event_text, ROOT
 from win.alert_overlay import AlertOverlay, set_capturable
 from win.status_overlay import StatusMirrorGroup, RowOpt
 from win.skill_overlay import SkillMirrorGroup
-from win.boss_session import BossSession, BOSS_RECT, debuff_event_text
+from win.boss_session import BossSession, boss_rect, debuff_event_text
 from win.boss_overlay import BossOverlay
 from win.window import find_window, client_rect
 from win.hotkeys import Hotkeys
@@ -57,6 +57,7 @@ class App:
         self.boss = None                          # BossSession (프로필에서 켰을 때)
         self.boss_ov = None                       # BossOverlay
         self.client_xy = (0, 0)
+        self.client_wh = (3840, 2160)
         self.edit = None                          # 편집 모드 상태
         self.windows = {}                         # 열린 설정 창
         self.last_error = ""
@@ -130,8 +131,8 @@ class App:
         hwnd = find_window(g.window_title)
         if not hwnd:
             self.last_error = f"게임 창을 못 찾음: '{g.window_title}'"; self.tray.showMessage("skilltrack", self.last_error); self._refresh_home(); return
-        cx, cy, _, _ = client_rect(hwnd)
-        self.client_xy = (cx, cy)
+        cx, cy, cw, ch = client_rect(hwnd)
+        self.client_xy, self.client_wh = (cx, cy), (cw, ch)
         x, y, w, h = prof.regions.status
         try:
             saver = FrameSaver(ROOT / "tests" / "fixtures" / "auto", enabled=g.diag_save)
@@ -251,7 +252,7 @@ class App:
 
     def _boss_tick(self, full):
         prof = self.cfg.profile()
-        bx, by, bw, bh = tuple(prof.regions.boss) if (prof and prof.regions.boss) else BOSS_RECT
+        bx, by, bw, bh = tuple(prof.regions.boss) if (prof and prof.regions.boss) else boss_rect(*self.client_wh)
         bframe = full[by:by + bh, bx:bx + bw]
         if bframe.shape[0] != bh or bframe.shape[1] != bw:
             return
