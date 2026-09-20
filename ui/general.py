@@ -75,6 +75,7 @@ class GeneralWindow(QWidget):
         self.smooth = QCheckBox("스킬 아이콘 확대를 부드럽게 (끄면 픽셀 그대로, 각짐)"); self.smooth.setChecked(cfg.overlays.skill_smooth); l2.addWidget(self.smooth)
         self.diag = QCheckBox("문제 진단용 프레임 자동 저장 (tests/fixtures/auto)"); self.diag.setChecked(g.diag_save); l2.addWidget(self.diag)
         self.cap = QCheckBox("오버레이를 스크린샷에 포함 (가이드 작성용 — 평소엔 끄세요)"); self.cap.setChecked(g.capturable); l2.addWidget(self.cap)
+        self.learn = QCheckBox("보스 디버프: 모르는 아이콘 자동 등록 (디버그용 — 평소엔 끄세요)"); self.learn.setChecked(g.boss_learn_icons); l2.addWidget(self.learn)
         v.addWidget(c2)
         v.addStretch()
 
@@ -89,6 +90,7 @@ class GeneralWindow(QWidget):
         g.hotkey_toggle, g.hotkey_settings, g.hotkey_edit = self.hk_toggle.text(), self.hk_settings.text(), self.hk_edit.text()
         g.window_title, g.fps = self.title.text().strip() or g.window_title, self.fps.value()
         g.hide_when_inactive, g.diag_save, g.capturable = self.hide_inactive.isChecked(), self.diag.isChecked(), self.cap.isChecked()
+        g.boss_learn_icons = self.learn.isChecked()
         self.cfg.overlays.skill_smooth = self.smooth.isChecked()
         self.cfg.save()
         if self.on_saved:

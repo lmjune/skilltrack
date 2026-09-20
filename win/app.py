@@ -19,6 +19,8 @@ from win.session import Session, FrameSaver, event_text, ROOT
 from win.alert_overlay import AlertOverlay, set_capturable
 from win.status_overlay import StatusMirrorGroup, RowOpt
 from win.skill_overlay import SkillMirrorGroup
+from win.boss_session import BossSession, BOSS_RECT, debuff_event_text
+from win.boss_overlay import BossOverlay
 from win.window import find_window, client_rect
 from win.hotkeys import Hotkeys
 from ui import theme
@@ -52,6 +54,8 @@ class App:
         self.sess = None
         self.mismatch = False
         self.overlay = self.mirror = self.skills = None
+        self.boss = None                          # BossSession (프로필에서 켰을 때)
+        self.boss_ov = None                       # BossOverlay
         self.client_xy = (0, 0)
         self.edit = None                          # 편집 모드 상태
         self.windows = {}                         # 열린 설정 창
@@ -80,6 +84,7 @@ class App:
         m.addAction("배치 편집", self.edit_begin)
         m.addAction("감시 항목…", self.open_watches)
         m.addAction("스킬 표시…", self.open_skills)
+        m.addAction("보스 디버프…", self.open_boss)
         m.addAction("일반 설정…", self.open_general)
         sub = m.addMenu("영역 설정")
         sub.addAction("상태창 영역 지정 (현재 캐릭터)", lambda: self.calibrate("status"))
@@ -136,6 +141,7 @@ class App:
             self.last_error = str(e); self.tray.showMessage("skilltrack", str(e)); self._refresh_home(); return
         for n in self.sess.notes:
             print(n)
+        self._start_boss(prof)
         self.mismatch = self.sess.verify_ratio is not None and self.sess.verify_ratio < 0.6
         self._rebuild_overlays()
         if self.mismatch:
@@ -149,6 +155,19 @@ class App:
         if self.cfg.general.active:
             self.notify(f"{prof.name} — 감시 {len(self.sess.tracker.tracks)}개", "info", 2.5)
         self._refresh_home()
+
+    def _start_boss(self, prof):
+        """보스 디버프 세션. 프로필에서 껐으면 None. 감시 목록이 비어도 인식·아이콘 수집은 한다."""
+        self.boss = None
+        if not prof or not prof.boss_enabled:
+            return
+        try:
+            saver = FrameSaver(ROOT / "tests" / "fixtures" / "boss" / "auto", enabled=self.cfg.general.diag_save,
+                               reasons=("newicon", "nostrip", "nopanel", "dropped", "manual"))
+            self.boss = BossSession(prof.boss_watch_list({}), saver=saver, learn=self.cfg.general.boss_learn_icons)
+            self.boss.set_watches(prof.boss_watch_list(self.boss.icons.meta))
+        except Exception as e:
+            print(f"보스 세션 실패: {e}")
 
     def switch_profile(self, pid):
         if pid not in self.cfg.profiles:
@@ -170,7 +189,11 @@ class App:
             self.mirror.close(); self.mirror = None
         if self.skills:
             self.skills.close(); self.skills = None
+        if self.boss_ov:
+            self.boss_ov.close(); self.boss_ov = None
         self.overlay = AlertOverlay(pos=tuple(ov.alert_pos), width=ov.alert_width, font_pt=ov.alert_font_pt)
+        if self.boss:
+            self.boss_ov = BossOverlay(self.boss.icons, pos=tuple(ov.boss_pos), scale=ov.boss_scale, opacity=ov.boss_opacity)
         prof0 = self.cfg.profile()
         if prof0 and prof0.skill_items and prof0.regions.skill:
             self.skills = SkillMirrorGroup(self.cap, self.client_xy, prof0.regions.skill, prof0.skill_items,
@@ -210,6 +233,8 @@ class App:
             return
         if self.skills:
             self.skills.update(full)
+        if self.boss:
+            self._boss_tick(full)
         r = self.sess.process(frame)
         if self.mirror:
             self.mirror.update_from(frame, r)
@@ -223,6 +248,26 @@ class App:
             text = f"{ev.label} {event_text(ev)}"
             print(f"[{datetime.now():%H:%M:%S}] {text}")
             self.overlay.push(text, level, dur, sound=g.sound, sound_file=g.sound_file or None)
+
+    def _boss_tick(self, full):
+        prof = self.cfg.profile()
+        bx, by, bw, bh = tuple(prof.regions.boss) if (prof and prof.regions.boss) else BOSS_RECT
+        bframe = full[by:by + bh, bx:bx + bw]
+        if bframe.shape[0] != bh or bframe.shape[1] != bw:
+            return
+        br = self.boss.process(bframe)
+        for n in br.notes:
+            print(f"[{datetime.now():%H:%M:%S}] {n}")
+        g = self.cfg.general
+        for ev in br.events:
+            text = f"{ev.label} {debuff_event_text(ev)}".strip() if ev.kind != "burst" else debuff_event_text(ev)
+            print(f"[{datetime.now():%H:%M:%S}] [보스] {text}")
+            if ev.kind == "burst":
+                self.overlay.push(text, "danger", 5.0, sound=g.sound, sound_file=g.sound_file or None)
+            elif ev.kind in ("start", "end"):
+                self.overlay.push(text, "info", 2.5, sound=False)
+        if self.boss_ov:
+            self.boss_ov.update_from(br.shown)
 
     # ------------------------------------------------------------ 마스터 스위치
     def _active_text(self):
@@ -245,6 +290,8 @@ class App:
     def _apply_show(self, on):
         if self.overlay and self.overlay.isVisible() != bool(on):
             self.overlay.setVisible(bool(on))
+        if self.boss_ov and self.boss_ov.isVisible() != bool(on):
+            self.boss_ov.setVisible(bool(on))
         for grp in (self.mirror, self.skills):
             if grp:
                 grp.set_visible(bool(on))
@@ -260,8 +307,11 @@ class App:
             self._rebuild_overlays()
         ov = self.cfg.overlays
         self._apply_show(True)
-        self.edit = {"backup": (self.overlay.pos(), [g.positions() for g in self._groups()], ov.mirror_opacity, ov.skill_opacity)}
+        self.edit = {"backup": (self.overlay.pos(), [g.positions() for g in self._groups()], ov.mirror_opacity, ov.skill_opacity,
+                                (self.boss_ov.pos(), self.boss_ov.scale) if self.boss_ov else None)}
         self.overlay.set_edit(True)
+        if self.boss_ov:
+            self.boss_ov.set_edit(True)
         for g in self._groups():
             g.set_edit(True)
         bar = EditBar(ov.mirror_scale, ov.mirror_opacity, has_mirror=self.mirror is not None,
@@ -287,6 +337,8 @@ class App:
         ov, prof = self.cfg.overlays, self.cfg.profile()
         if save:
             ov.alert_pos = [self.overlay.x(), self.overlay.y()]
+            if self.boss_ov:
+                ov.boss_pos, ov.boss_scale = [self.boss_ov.x(), self.boss_ov.y()], round(self.boss_ov.scale, 2)
             if prof:
                 if self.mirror:
                     by = {m.row: m for m in prof.mirror_rows}
@@ -304,11 +356,15 @@ class App:
             ov.skill_opacity, ov.skill_scale = round(bar.skill_opacity.value(), 2), round(bar.skill_scale.value(), 2)
             self.cfg.save()
         else:
-            apos, gpos, mop, sop = self.edit["backup"]
+            apos, gpos, mop, sop, bback = self.edit["backup"]
             self.overlay.move(apos)
+            if self.boss_ov and bback:
+                self.boss_ov.move(bback[0]); self.boss_ov.set_scale(bback[1])
             for g, saved in zip(self._groups(), gpos):
                 g.restore(saved); g.set_opacity_all(sop if g is self.skills else mop)
         self.overlay.set_edit(False)
+        if self.boss_ov:
+            self.boss_ov.set_edit(False)
         for g in self._groups():
             g.set_edit(False)
         self.edit["bar"].close(); self.edit = None
@@ -351,6 +407,25 @@ class App:
             frames[rg["id"]] = (f, x, y)
         w = SkillsWindow(self.cfg, prof, frames, on_saved=self._rebuild_overlays, app=self)
         self._show(w, "skills")
+
+    def open_boss(self):
+        prof = self.cfg.profile()
+        if not prof:
+            self.open_home(); return
+        from ui.boss import BossWindow
+        from core.bossbar import IconLib
+        icons = self.boss.icons if self.boss else IconLib(ROOT / "assets" / "boss_icons")
+        icons.load()                                       # 전투 중 자동 등록된 것 반영
+        w = BossWindow(self.cfg, prof, icons, on_saved=self._boss_saved)
+        self._show(w, "boss")
+
+    def _boss_saved(self):
+        self.cfg = Config.load()
+        prof = self.cfg.profile()
+        self._start_boss(prof)
+        self._rebuild_overlays()
+        self.notify(f"보스 디버프 감시 {len(prof.boss_watches) if prof and prof.boss_enabled else 0}개", "info", 2.0)
+        self._refresh_home()
 
     def open_general(self):
         from ui.general import GeneralWindow

@@ -31,6 +31,7 @@ class General:
     hotkey_edit: str = "Ctrl+F10"          # 배치 편집
     hide_when_inactive: bool = True        # 켜져 있어도 게임 창이 뒤로 가면 오버레이 숨김
     capturable: bool = False               # 오버레이를 스크린샷에 포함 (가이드 작성용). 평소엔 꺼둘 것
+    boss_learn_icons: bool = False         # 보스 디버프: 모르는 아이콘을 assets/boss_icons 에 자동 등록 (디버그용. 배경 탓에 변형된 그림이 쌓이므로 평소엔 끔)
 
 
 @dataclass
@@ -44,6 +45,16 @@ class WatchCfg:
     keep: bool = False
     keep_delay: float = 10.0
     keep_interval: float = 30.0
+
+
+@dataclass
+class BossWatchCfg:
+    """보스 디버프 감시 항목. 키 = 아이콘 이름(icons.json 의 name). 같은 이름의 아이콘(스택 변형 등)은 한 항목.
+    enabled(감시) = 빠지면 목록에 표시. burst 만 켜면 목록엔 안 뜨고 걸리는 순간 알림만."""
+    enabled: bool = True
+    thresholds: list = field(default_factory=lambda: [60, 40, 20])   # 남은 초가 이 이하로 내려갈 때 다시 표시 (초 단위 라벨일 때만)
+    burst: bool = False                                              # 걸리는 순간 알림 (버스트 스킬)
+    burst_text: str = ""                                             # 비우면 "{이름} 적용!"
 
 
 @dataclass
@@ -70,6 +81,9 @@ class Overlays:
     skill_scale: float = 2.0
     skill_opacity: float = 0.95
     skill_smooth: bool = True                                          # 스킬 아이콘 확대 시 부드럽게 (끄면 픽셀 그대로)
+    boss_pos: list = field(default_factory=lambda: [1500, 1150])       # 보스 디버프 목록 위치
+    boss_scale: float = 3.0                                            # 아이콘 12px × 배율
+    boss_opacity: float = 0.95
 
 
 @dataclass
@@ -85,7 +99,7 @@ class SkillItem:
 class Regions:
     status: list | None = None            # [x, y, w, h] 클라이언트 기준
     skill: list = field(default_factory=list)   # [{"id", "rect", "grid"}]
-    boss: list | None = None              # 2차
+    boss: list | None = None              # None 이면 win.boss_session.BOSS_RECT (바가 화면 고정이라 보통 필요 없음)
 
 
 @dataclass
@@ -95,6 +109,24 @@ class Profile:
     watches: dict = field(default_factory=dict)          # {row: WatchCfg}
     mirror_rows: list = field(default_factory=list)      # [MirrorRow]
     skill_items: list = field(default_factory=list)      # [SkillItem]
+    boss_enabled: bool = True                            # 보스 디버프 감시 (띠가 있는 보스에서만 동작)
+    boss_watches: dict = field(default_factory=dict)     # {아이콘 이름: BossWatchCfg}
+
+    def boss_watch_list(self, icon_meta: dict) -> list:
+        """icons.json 의 meta({id: {name, tags}}) 로 DebuffWatch 목록 생성. 같은 이름의 아이콘은 icon_ids 로 묶는다."""
+        from core.bosstrack import DebuffWatch
+        by_name = {}
+        for k, m in icon_meta.items():
+            if m.get("name"):
+                by_name.setdefault(m["name"], []).append(k)
+        out = []
+        for name, w in self.boss_watches.items():
+            ids = by_name.get(name)
+            if not ids or not (w.enabled or w.burst):
+                continue
+            out.append(DebuffWatch(ids[0], name, icon_ids=list(ids), thresholds=list(w.thresholds),
+                                   burst=w.burst, burst_text=w.burst_text, show_missing=w.enabled))
+        return out
 
     def watch_opts(self) -> dict:
         out = {}
@@ -169,5 +201,6 @@ def _profile_from(pd):
     ws = {int(k): WatchCfg(**_pick(v, WatchCfg)) for k, v in pd.get("watches", {}).items()}
     ms = [MirrorRow(**_pick(r, MirrorRow)) for r in pd.get("mirror_rows", [])]
     sk = [SkillItem(**_pick(r, SkillItem)) for r in pd.get("skill_items", [])]
+    bw = {k: BossWatchCfg(**_pick(v, BossWatchCfg)) for k, v in pd.get("boss_watches", {}).items()}
     return Profile(name=pd.get("name", "캐릭터"), regions=Regions(status=rg.get("status"), skill=rg.get("skill", []), boss=rg.get("boss")),
-                   watches=ws, mirror_rows=ms, skill_items=sk)
+                   watches=ws, mirror_rows=ms, skill_items=sk, boss_enabled=pd.get("boss_enabled", True), boss_watches=bw)

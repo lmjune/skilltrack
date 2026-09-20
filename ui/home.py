@@ -39,6 +39,7 @@ class ProfileCard(QFrame):
         st.addWidget(QLabel(("✓" if has_layout else "✗") + " 레이아웃" + (f" ({sess_rows}행)" if current and sess_rows else "")))
         st.addWidget(QLabel(f"감시 {n_watch}개" if n_watch else "감시 없음"))
         st.addWidget(QLabel(f"스킬창 {len(prof.regions.skill)}개 · 표시 {len(prof.skill_items)}개"))
+        st.addWidget(QLabel(f"보스 디버프 {len(prof.boss_watches)}개" if prof.boss_enabled else "보스 디버프 끔"))
         st.addStretch(); v.addLayout(st)
 
         if not has_region:
@@ -61,6 +62,7 @@ class ProfileCard(QFrame):
         b3 = QPushButton("레이아웃 다시"); b3.setEnabled(current and has_region); b3.clicked.connect(lambda: home.app.start_session(recalib=True)); btns.addWidget(b3)
         b4 = QPushButton("스킬창 영역 추가"); b4.setEnabled(current); b4.clicked.connect(lambda: home.app.calibrate("skill", pid)); btns.addWidget(b4)
         b5 = QPushButton("스킬 표시"); b5.setEnabled(current and bool(prof.regions.skill)); b5.clicked.connect(home.app.open_skills); btns.addWidget(b5)
+        b6 = QPushButton("보스 디버프"); b6.setEnabled(current); b6.clicked.connect(home.app.open_boss); btns.addWidget(b6)
         btns.addStretch(); v.addLayout(btns)
 
 
