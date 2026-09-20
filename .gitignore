@@ -13,3 +13,4 @@ profiles/variants/
 assets/unknown/*.png
 assets/unknown/*.pngtests/fixtures/boss/auto/
 assets/boss_icons/bosses.json
+tests/fixtures/boss/auto
