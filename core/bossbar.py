@@ -54,6 +54,8 @@ FRAME_DARK = 50             # 테두리 픽셀(체크무늬 0~41)로 볼 최대 
 FRAME_RATIO = 0.75          # 테두리 52px 중 어두운 비율 최소
 ICON_MIN_CORR = 0.95        # 같은 아이콘으로 볼 내부 12×12 정규화 상관. 다른 아이콘끼리 최대 0.915 (노랑 검 vs 분홍 검)
 ICON_MIN_CORR_STACK = 0.85  # icons.json 에서 tags 에 "stack" 이 있는 아이콘: 스택 수 숫자만 바뀌는 변형(실측 0.89~0.93)도 같은 것으로
+ICON_MIN_CORR_DIM = 0.85    # 어둡게/반투명하게 사라지는 프레임(최대 채널 <200): 배경과 섞여 상관이 떨어진다(실측 0.84~0.90). 2위와 0.05 이상 차이 날 때만
+FADE_MAX = 200
 BLINK_GAINS = tuple(np.concatenate([np.arange(0.15, 1.0, 0.05), np.arange(1.0, 2.6, 0.1)]).round(2))
 # 만료 직전 깜빡임은 어둡게(~25%)도, 밝게(~145%, 255 에서 잘림)도 그려진다 → 템플릿을 k 배 후 clip 한 것과 비교
 
@@ -164,51 +166,66 @@ def _ring_dark_ratio(reg, x, y):
     return float(ring.mean())
 
 
+def _gray(bgr):
+    return bgr.max(axis=2)
+
+
 def _has_content(icon):
-    """내부가 거의 단색(검은 배경 등)이면 아이콘이 아니다."""
-    return icon.std() > 12
+    """내부가 거의 단색(검은 배경, 보라 바닥 등)이면 아이콘이 아니다. 색 편차가 아니라 밝기 편차로 본다."""
+    return float(_gray(icon).std()) > 12
 
 
-def _has_label(region_bgr, x, ly):
+def _label_ok(region_bgr, x, ly, lib) -> bool:
+    """아래에 읽히는 라벨(숫자/M)이 있는가. 흰 픽셀 수만 세면 흰 얼음 바닥에서 오검출 → 글자 매칭까지 요구."""
     lab = region_bgr[ly:ly + LABEL_H, x + LABEL_DX:x + LABEL_DX + LABEL_W]
-    return lab.size and int(_white(lab).sum()) >= 5
-
-
-def _occupied(region_bgr, x, y, ly):
-    """칸에 아이콘이 있는가. 테두리가 어둡고 내부에 그림이 있어야 하며,
-    어두운 배경이 우연히 통과하는 걸 막기 위해 '밝은 픽셀(≥90)이 있거나 아래에 라벨이 있어야' 한다
-    (만료 직전 어둡게 깜빡이는 아이콘은 최대 60~76 이지만 항상 초 라벨이 붙어 있다)."""
-    if x + ICON > region_bgr.shape[1]:
+    if not lab.size or int(_white(lab).sum()) < 5:
         return False
-    inner = region_bgr[y + 1:y + 1 + INNER, x + 1:x + 1 + INNER]
-    if _ring_dark_ratio(region_bgr, x, y) >= FRAME_RATIO:
-        return _has_content(inner) and (int(inner.max()) >= 90 or _has_label(region_bgr, x, ly))
-    # 테두리가 없는 아이콘도 있다 (파란 X 검: 14×14 전체가 그림). 띠 뒤는 어두운 균일 패널이라
-    # '내부가 확실한 그림'이면 칸으로 본다.
+    glyphs = segment(lab)
+    return bool(glyphs) and all(lib.match(g.mask) is not None for g in glyphs) if lib is not None else bool(glyphs)
+
+
+def _slot_score(region_bgr, x, y, ly, lib=None) -> float:
+    """칸에 아이콘이 있을 점수. 0 = 없음.
+    - 라벨(흰 글자)이 아래에 있으면 확실 (라벨은 아이콘 아래에만 그려진다. 아주 어둡게 깜빡이는 프레임도 라벨은 남는다)
+    - 테두리가 어둡고 내부에 밝기 편차가 있으면 아이콘
+    - 테두리 없는 아이콘(파란 X 검): 14×14 전체가 밝고 편차가 큼. 단 왼쪽 4px 간격은 패널(어두움)이어야 한다 (밝은 바닥 오검출 방지)"""
+    if x + ICON > region_bgr.shape[1] or x < 0:
+        return 0.0
     box = region_bgr[y:y + ICON, x:x + ICON]
-    return float(box.std()) > 40 and int(box.max()) >= 200
+    inner = box[1:1 + INNER, 1:1 + INNER]
+    ring = _ring_dark_ratio(region_bgr, x, y)
+    if _label_ok(region_bgr, x, ly, lib):
+        return 2.0 + ring
+    if ring >= FRAME_RATIO and _has_content(inner) and int(inner.max()) >= 130:
+        return 1.0 + ring
+    g = _gray(box)
+    if float(g.std()) > 40 and int(g.max()) >= 200:
+        gap = _gray(region_bgr[y:y + ICON, max(0, x - 4):x])
+        if gap.size and float(gap.mean()) < 130:
+            return 1.0
+    return 0.0
 
 
-def find_slots(region_bgr, anchor: Anchor) -> list[Slot]:
+def find_slots(region_bgr, anchor: Anchor, lib: GlyphLib | None = None) -> list[Slot]:
     y = anchor.text_y + STRIP_DY
     ly = anchor.text_y + LABEL_DY
     if y < 0 or y + ICON > region_bgr.shape[0]:
         return []
-    # 띠 시작 x 는 실측 23프레임 전부 이름 왼쪽 + STRIP_DX. 어두운 배경에선 엉뚱한 x 에서도 테두리 검사가 통과하고
-    # 칸 수가 더 많이 나오기도 해서(잘린 아이콘이 등록되는 원인) 스캔하지 않고 ±2 만 허용한다.
+    # 띠 시작 x 는 실측상 항상 이름 왼쪽 + STRIP_DX. ±2 만 허용하되, 칸 '수'가 아니라 칸당 '평균 점수'로 고른다
+    # (어긋난 위치에선 테두리 점수가 낮고, 어두운 배경이 칸으로 더 잡혀 수는 오히려 많았다). 동점이면 기대 위치.
     expect = anchor.text_x + STRIP_DX
-    best_x, best_n = None, 0
+    best_x, best_n, best_score = None, 0, 0.0
     for dx in (0, -1, 1, -2, 2):
         x0 = expect + dx
-        if x0 < 0:
-            continue
-        n = 0
+        n, score = 0, 0.0
         for i in range(MAX_SLOTS):
-            if not _occupied(region_bgr, x0 + i * PITCH, y, ly):
+            sc = _slot_score(region_bgr, x0 + i * PITCH, y, ly, lib)
+            if sc <= 0:
                 break
-            n += 1
-        if n > best_n:
-            best_x, best_n = x0, n
+            n += 1; score += sc
+        mean = score / n if n else 0.0
+        if mean > best_score + 1e-6:
+            best_x, best_n, best_score = x0, n, mean
     if best_n == 0:
         return []
     out = []
@@ -287,12 +304,18 @@ class IconLib:
     def match(self, icon) -> tuple[str | None, float]:
         """(id, 유사도). 밝기에 무관 (만료 직전엔 아이콘이 어둡게/밝게 깜빡인다)."""
         a = self._norm(icon)
-        best, best_c = None, -1.0
+        best, best_c, second = None, -1.0, -1.0
         for k, bank in self._bank().items():
             c = float((bank @ a).max())
             if c > best_c:
-                best, best_c = k, c
-        if best is not None and best_c >= (ICON_MIN_CORR_STACK if self.is_stack(best) else ICON_MIN_CORR):
+                best, best_c, second = k, c, best_c
+            elif c > second:
+                second = c
+        if best is None:
+            return None, best_c
+        if best_c >= (ICON_MIN_CORR_STACK if self.is_stack(best) else ICON_MIN_CORR):
+            return best, best_c
+        if int(icon.max()) < FADE_MAX and best_c >= ICON_MIN_CORR_DIM and best_c - second >= 0.05:
             return best, best_c
         return None, best_c
 
@@ -334,7 +357,7 @@ def read_bar(region_bgr, lib: GlyphLib, icons: IconLib | None = None, search=Non
     if a is None:
         return BarRead(None)
     strip = has_strip_panel(region_bgr, a)
-    slots = find_slots(region_bgr, a) if strip else []
+    slots = find_slots(region_bgr, a, lib) if strip else []
     for s in slots:
         s.label, s.seconds = read_label(s.label_img, lib)
         if icons is not None:

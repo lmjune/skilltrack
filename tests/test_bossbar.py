@@ -59,7 +59,8 @@ def test_all_frames_labels_and_icons(lib):
         assert r.present, name
         assert [s.label for s in r.slots] == t["labels"], name
         assert [s.icon_id for s in r.slots] == t["icons"], name
-        assert all(s.icon_id or icons.is_dim(s.icon) for s in r.slots), name   # 어두운 깜빡임은 모르는 아이콘일 수 있음
+        # 사라지는 중(반투명, 최대 채널 <200)인 아이콘은 배경과 섞여 못 알아볼 수 있다. 밝은 아이콘은 전부 알아봐야 한다
+        assert all(s.icon_id or int(s.icon.max()) < 200 for s in r.slots), name
 
 
 def test_dim_variant_matches(lib):
