@@ -13,8 +13,9 @@ import json
 import uuid
 from pathlib import Path
 
-ROOT = Path(__file__).parent.parent
-CONFIG_FILE = ROOT / "profiles" / "config.json"
+from core.paths import PROFILES
+
+CONFIG_FILE = PROFILES / "config.json"
 
 
 @dataclass

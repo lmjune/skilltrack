@@ -173,7 +173,8 @@ class AlertOverlay(EditableOverlay):
         p.end()
 
 
-SOUND_DIR = Path(__file__).parent.parent / "assets" / "sounds"   # 기본 알림음 (직접 합성, 라이선스 없음)
+from core.paths import ASSETS
+SOUND_DIR = ASSETS / "sounds"   # 기본 알림음 (직접 합성, 라이선스 없음)
 LEVEL_FILE = {"danger": "danger.wav", "warn": "warn.wav", "info": "info.wav", "ok": "info.wav"}
 
 

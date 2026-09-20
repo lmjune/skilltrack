@@ -7,7 +7,8 @@ from pathlib import Path
 from PySide6.QtGui import QFont, QFontDatabase
 from PySide6.QtWidgets import QApplication
 
-FONT_DIR = Path(__file__).parent.parent / "assets" / "fonts"   # Pretendard-*.ttf 를 여기 두면 자동 로드 (OFL)
+from core.paths import ASSETS
+FONT_DIR = ASSETS / "fonts"   # Pretendard-*.ttf 를 여기 두면 자동 로드 (OFL)
 
 BG, CARD, CARD_HOVER, BORDER = "#0f1115", "#171a20", "#1c2028", "#262b35"
 TEXT, MUTED, ACCENT, ACCENT_DIM, DANGER = "#e6e8ec", "#8b919c", "#5b8cff", "#3a5bb8", "#ff5b5b"

@@ -5,6 +5,7 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineE
                                QFrame, QFileDialog, QMessageBox)
 
 from core.config import Config
+from core.paths import APP_NAME
 
 
 class HotkeyEdit(QLineEdit):
@@ -48,7 +49,7 @@ class GeneralWindow(QWidget):
     def __init__(self, cfg: Config, on_saved=None):
         super().__init__()
         self.cfg, self.on_saved = cfg, on_saved
-        self.setWindowTitle("skilltrack"); self.resize(640, 520)
+        self.setWindowTitle(APP_NAME); self.resize(640, 520)
         g = cfg.general
         root = QVBoxLayout(self); root.setContentsMargins(0, 0, 0, 0); root.setSpacing(0)
         head = QWidget(); hv = QVBoxLayout(head); hv.setContentsMargins(28, 24, 28, 12)

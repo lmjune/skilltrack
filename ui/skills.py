@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, Q
                                QScrollArea, QFrame)
 
 from core.config import Config, SkillItem
+from core.paths import APP_NAME
 
 MODES = [("always", "항상 표시"), ("cooling", "쿨타임 중에만"), ("dimmed", "항상 (준비되면 흐리게)")]
 
@@ -52,7 +53,7 @@ class SkillsWindow(QWidget):
         """frames: {region_id: (bgr, rx, ry)} 각 스킬창 영역 캡처. app: 영역 다시 지정/삭제용"""
         super().__init__()
         self.cfg, self.prof, self.on_saved, self.app = cfg, prof, on_saved, app
-        self.setWindowTitle("skilltrack"); self.resize(1040, 720)
+        self.setWindowTitle(APP_NAME); self.resize(1040, 720)
         root = QVBoxLayout(self); root.setContentsMargins(0, 0, 0, 0); root.setSpacing(0)
         head = QWidget(); hv = QVBoxLayout(head); hv.setContentsMargins(28, 24, 28, 12); hv.setSpacing(4)
         t = QLabel(f"스킬 표시 — {prof.name}"); t.setObjectName("title"); hv.addWidget(t)

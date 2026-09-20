@@ -53,6 +53,8 @@ def test_all_frames_labels_and_icons(lib):
     """13프레임: 어두움·흰 얼음·인벤 창 겹침·색 다른 바(보라/녹/노랑+빨강)·만료 직전 깜빡임(≤5초, 25% 밝기)."""
     import json
     truth = json.loads(TRUTH.read_text(encoding="utf-8"))
+    missing = [n for n in truth if not (FIX / n).exists()]
+    assert not missing, f"픽스처 없음 (tests/fixtures/boss/): {missing}"
     icons = IconLib(ICONS)
     for name, t in truth.items():
         r = read_bar(cv2.imread(str(FIX / name)), lib, icons)

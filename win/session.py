@@ -21,7 +21,8 @@ from core.tracker import Tracker, Watch, Event
 from core.pixelwatch import read_site, Reading
 from core import layout_store, variants
 
-ROOT = Path(__file__).parent.parent
+from core.paths import ASSETS, DIAG, UNKNOWN_DIR
+ROOT = DIAG                        # 호환용
 CALIB_FRAMES = 10
 VERIFY_MIN = 0.6
 
@@ -108,9 +109,9 @@ class Session:
         watch_opts: {row: Watch 필드}. None 이면 전 행을 기본값으로 감시(콘솔 개발용).
         """
         self.cap, self.region, self.rect, self.pid = cap, region, rect, pid
-        self.lib = GlyphLib.load(ROOT / "assets" / "glyphs.json")
-        self.saver = saver or FrameSaver(ROOT / "tests" / "fixtures" / "auto")
-        self.unknown = UnknownGlyphs(ROOT / "assets" / "unknown", enabled=self.saver.enabled)
+        self.lib = GlyphLib.load(ASSETS / "glyphs.json")
+        self.saver = saver or FrameSaver(DIAG / "auto")
+        self.unknown = UnknownGlyphs(UNKNOWN_DIR, enabled=self.saver.enabled)
         self.notes = []
         self.verify_ratio = None
 

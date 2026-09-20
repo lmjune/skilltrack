@@ -9,8 +9,8 @@ from pathlib import Path
 from core.rows import Row, RowLayout
 from core.pixelwatch import NameSite, make_site, read_site
 
-ROOT = Path(__file__).parent.parent
-LAYOUT_DIR = ROOT / "profiles" / "layouts"
+from core.paths import PROFILES
+LAYOUT_DIR = PROFILES / "layouts"
 
 
 def path(pid):

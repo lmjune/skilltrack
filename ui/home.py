@@ -6,6 +6,7 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushB
                                QMessageBox, QScrollArea, QCheckBox)
 
 from core import layout_store
+from core.paths import VERSION, APP_NAME
 
 
 def muted(t):
@@ -70,10 +71,10 @@ class HomeWindow(QWidget):
     def __init__(self, app):
         super().__init__()
         self.app = app
-        self.setWindowTitle("skilltrack"); self.resize(620, 560)
+        self.setWindowTitle(APP_NAME); self.resize(620, 560)
         root = QVBoxLayout(self); root.setContentsMargins(0, 0, 0, 0); root.setSpacing(0)
         head = QWidget(); hv = QHBoxLayout(head); hv.setContentsMargins(28, 24, 28, 12)
-        tv = QVBoxLayout(); t = QLabel("skilltrack"); t.setObjectName("title"); tv.addWidget(t)
+        tv = QVBoxLayout(); t = QLabel(f"{APP_NAME}  <span style='font-size:12px;color:#8b919c;font-weight:400'>v{VERSION}</span>"); t.setObjectName("title"); tv.addWidget(t)
         self.sub = QLabel(); self.sub.setObjectName("subtitle"); tv.addWidget(self.sub); hv.addLayout(tv); hv.addStretch()
         add = QPushButton("+ 캐릭터 추가"); add.setObjectName("primary"); add.clicked.connect(self.add); hv.addWidget(add)
         root.addWidget(head)

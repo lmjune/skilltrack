@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, Q
 
 from core.bossbar import IconLib
 from core.config import Config, BossWatchCfg
+from core.paths import APP_NAME
 
 THUMB = 4
 
@@ -79,7 +80,7 @@ class BossWindow(QWidget):
     def __init__(self, cfg: Config, prof, icons: IconLib, on_saved=None):
         super().__init__()
         self.cfg, self.prof, self.icons, self.on_saved = cfg, prof, icons, on_saved
-        self.setWindowTitle("skilltrack"); self.resize(1080, 720)
+        self.setWindowTitle(APP_NAME); self.resize(1080, 720)
         root = QVBoxLayout(self); root.setContentsMargins(0, 0, 0, 0); root.setSpacing(0)
         head = QWidget(); hv = QVBoxLayout(head); hv.setContentsMargins(28, 24, 28, 12); hv.setSpacing(4)
         t = QLabel(f"보스 디버프 — {prof.name}"); t.setObjectName("title"); hv.addWidget(t)

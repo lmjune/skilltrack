@@ -14,8 +14,8 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-ROOT = Path(__file__).parent.parent
-VAR_DIR = ROOT / "profiles" / "variants"
+from core.paths import PROFILES
+VAR_DIR = PROFILES / "variants"
 MATCH_THR = 0.97
 
 

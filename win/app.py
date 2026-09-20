@@ -15,7 +15,8 @@ from PySide6.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QMessageBox
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from core.config import Config, CONFIG_FILE
-from win.session import Session, FrameSaver, event_text, ROOT
+from win.session import Session, FrameSaver, event_text
+from core.paths import ASSETS, DIAG, VERSION, APP_NAME
 from win.alert_overlay import AlertOverlay, set_capturable
 from win.status_overlay import StatusMirrorGroup, RowOpt
 from win.skill_overlay import SkillMirrorGroup
@@ -63,7 +64,7 @@ class App:
         self.last_error = ""
 
         self.tray = QSystemTrayIcon(make_icon(paused=not self.cfg.general.active), self.qt)
-        self.tray.setToolTip("skilltrack")
+        self.tray.setToolTip(f"{APP_NAME} {VERSION}")
         self._build_menu()
         self.tray.show()
         self.tray.activated.connect(self._tray_click)
@@ -117,7 +118,7 @@ class App:
         if self.overlay:
             self.overlay.push(text, level, dur, sound=False)
         else:
-            self.tray.showMessage("skilltrack", text)
+            self.tray.showMessage(APP_NAME, text)
 
     # ------------------------------------------------------------ 세션
     def start_session(self, recalib=False):
@@ -130,16 +131,16 @@ class App:
             self.last_error = f"'{prof.name}' 상태창 영역이 없습니다 → [영역 설정]"; self._refresh_home(); return
         hwnd = find_window(g.window_title)
         if not hwnd:
-            self.last_error = f"게임 창을 못 찾음: '{g.window_title}'"; self.tray.showMessage("skilltrack", self.last_error); self._refresh_home(); return
+            self.last_error = f"게임 창을 못 찾음: '{g.window_title}'"; self.tray.showMessage(APP_NAME, self.last_error); self._refresh_home(); return
         cx, cy, cw, ch = client_rect(hwnd)
         self.client_xy, self.client_wh = (cx, cy), (cw, ch)
         x, y, w, h = prof.regions.status
         try:
-            saver = FrameSaver(ROOT / "tests" / "fixtures" / "auto", enabled=g.diag_save)
+            saver = FrameSaver(DIAG / "auto", enabled=g.diag_save)
             self.sess = Session(self.cap, (cx + x, cy + y, w, h), tuple(prof.regions.status), pid=self.cfg.current,
                                 watch_opts=prof.watch_opts(), recalib=recalib, saver=saver)
         except RuntimeError as e:
-            self.last_error = str(e); self.tray.showMessage("skilltrack", str(e)); self._refresh_home(); return
+            self.last_error = str(e); self.tray.showMessage(APP_NAME, str(e)); self._refresh_home(); return
         for n in self.sess.notes:
             print(n)
         self._start_boss(prof)
@@ -148,7 +149,7 @@ class App:
         if self.mismatch:
             # 고정 목록이 바뀌었거나 다른 캐릭터. 틀린 레이아웃으로 감시하지 않는다
             self.last_error = f"'{prof.name}' 상태창 항목이 변경되었습니다. 재설정해주세요 (홈 → 레이아웃 다시)"
-            self.tray.showMessage("skilltrack", self.last_error)
+            self.tray.showMessage(APP_NAME, self.last_error)
             if self.active:
                 self.notify("상태창 항목이 변경됨 — 홈에서 '레이아웃 다시'", "warn", 8)
             self._refresh_home(); return
@@ -163,7 +164,7 @@ class App:
         if not prof or not prof.boss_enabled:
             return
         try:
-            saver = FrameSaver(ROOT / "tests" / "fixtures" / "boss" / "auto", enabled=self.cfg.general.diag_save,
+            saver = FrameSaver(DIAG / "boss" / "auto", enabled=self.cfg.general.diag_save,
                                reasons=("newicon", "nostrip", "nopanel", "dropped", "manual"))
             self.boss = BossSession(prof.boss_watch_list({}), saver=saver, learn=self.cfg.general.boss_learn_icons)
             self.boss.set_watches(prof.boss_watch_list(self.boss.icons.meta))
@@ -415,7 +416,7 @@ class App:
             self.open_home(); return
         from ui.boss import BossWindow
         from core.bossbar import IconLib
-        icons = self.boss.icons if self.boss else IconLib(ROOT / "assets" / "boss_icons")
+        icons = self.boss.icons if self.boss else IconLib(ASSETS / "boss_icons")
         icons.load()                                       # 전투 중 자동 등록된 것 반영
         w = BossWindow(self.cfg, prof, icons, on_saved=self._boss_saved)
         self._show(w, "boss")
@@ -452,7 +453,7 @@ class App:
             return
         hwnd = find_window(self.cfg.general.window_title)
         if not hwnd:
-            self.tray.showMessage("skilltrack", "게임 창을 못 찾음"); return
+            self.tray.showMessage(APP_NAME, "게임 창을 못 찾음"); return
         self._was_active = self.cfg.general.active
         if self._was_active:
             self.toggle_active(False)                   # 드래그 중엔 오버레이·감시 끔

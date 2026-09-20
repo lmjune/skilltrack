@@ -22,7 +22,7 @@ from core.bosstrack import BossTracker, DebuffEvent, DebuffWatch
 from core.digits import GlyphLib
 from win.session import FrameSaver
 
-ROOT = Path(__file__).parent.parent
+from core.paths import ASSETS, DIAG
 BOSS_RECT = (1500, 1850, 850, 250)      # 4K 기준. 바 1657~2178 × 1962~2011 + 띠 35행 위 를 여유 있게
 
 
@@ -33,7 +33,7 @@ def boss_rect(client_w, client_h):
     x = max(0, client_w // 2 - 425)
     y = max(0, client_h - 310)
     return (x, y, min(850, client_w - x), min(250, client_h - y))
-ICON_DIR = ROOT / "assets" / "boss_icons"
+ICON_DIR = ASSETS / "boss_icons"
 BOSSES_FILE = ICON_DIR / "bosses.json"    # {이름 해시: {"strip": true, "pct_sample": "…"}} 띠 패널이 한 번이라도 보인 보스
 
 
@@ -48,10 +48,10 @@ class BossResult:
 class BossSession:
     def __init__(self, watches: list[DebuffWatch] | None = None, saver: FrameSaver | None = None, learn=True, verbose=False):
         self.verbose = verbose                    # 바를 못 찾는 이유 진단 출력 (콘솔 감시용)
-        self.lib = GlyphLib.load(ROOT / "assets" / "glyphs.json")
+        self.lib = GlyphLib.load(ASSETS / "glyphs.json")
         self.icons = IconLib(ICON_DIR)
         self.tracker = BossTracker(watches or [])
-        self.saver = saver or FrameSaver(ROOT / "tests" / "fixtures" / "boss" / "auto", reasons=("newicon", "nostrip", "nopanel", "dropped", "manual"))
+        self.saver = saver or FrameSaver(DIAG / "boss" / "auto", reasons=("newicon", "nostrip", "nopanel", "dropped", "manual"))
         self.learn = learn
         self.was_present = False
         self.last_strip_n = 0

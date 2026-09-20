@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, 
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from core.config import Config, WatchCfg, MirrorRow
+from core.paths import APP_NAME
 from core.status import parse_rows
 from core import variants
 from ui import theme
@@ -133,7 +134,7 @@ class WatchesWindow(QWidget):
     def __init__(self, cfg: Config, prof, layout, frame, on_saved=None):
         super().__init__()
         self.cfg, self.prof, self.on_saved = cfg, prof, on_saved
-        self.setWindowTitle("skilltrack")
+        self.setWindowTitle(APP_NAME)
         self.resize(820, 780)
         states = {s.index: s for s in parse_rows(frame, layout)}
         mirrors = {m.row: m for m in prof.mirror_rows}
