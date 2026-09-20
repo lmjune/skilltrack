@@ -43,8 +43,8 @@ def main(pick, recalib, debug):
     cx, cy, _, _ = client_rect(hwnd)
     sx, sy, sw, sh = STATUS_RECT
     cap = Capture()
-    sess = Session(cap, (cx + sx, cy + sy, sw, sh), STATUS_RECT, recalib=recalib, pick=pick,
-                   watch_opts={i: {"keep": True} for i in KEEP_ROWS})
+    sess = Session(cap, (cx + sx, cy + sy, sw, sh), STATUS_RECT, pid="_console", recalib=recalib, pick=pick,
+                   watch_opts=None)
     con = Console()
     for n in sess.notes:
         con.log(n)

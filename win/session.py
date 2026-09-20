@@ -22,7 +22,6 @@ from core.pixelwatch import read_site, Reading
 from core import layout_store
 
 ROOT = Path(__file__).parent.parent
-LAYOUT_FILE = ROOT / "profiles" / "status_layout.json"
 CALIB_FRAMES = 10
 VERIFY_MIN = 0.6
 
@@ -64,21 +63,23 @@ class FrameSaver:
 
 
 class UnknownGlyphs:
-    def __init__(self, folder: Path):
-        self.folder = folder
-        folder.mkdir(parents=True, exist_ok=True)
+    """모르는 시간 글자 수집 (글자 라이브러리 보강용). 진단 저장이 켜져 있을 때만, 최대 max_files 장."""
+
+    def __init__(self, folder: Path, enabled=True, max_files=30):
+        self.folder, self.enabled, self.max_files = folder, enabled, max_files
         self.seen, self.last_warn = set(), {}
 
     def add(self, row_index, time_img, read, warn_every=5.0):
-        """새 글자면 저장. 경고할 때만 문자열 반환."""
         new = 0
         for g in read.unknown:
             key = hashlib.md5(g.mask.tobytes() + bytes(g.mask.shape)).hexdigest()[:10]
             if key in self.seen:
                 continue
             self.seen.add(key); new += 1
-            cv2.imwrite(str(self.folder / f"{key}.png"), time_img[:, g.x0:g.x1])
-            cv2.imwrite(str(self.folder / f"{key}_time.png"), time_img)
+            if self.enabled and len(self.seen) <= self.max_files:
+                self.folder.mkdir(parents=True, exist_ok=True)
+                cv2.imwrite(str(self.folder / f"{key}.png"), time_img[:, g.x0:g.x1])
+                cv2.imwrite(str(self.folder / f"{key}_time.png"), time_img)
         now = time.time()
         if new or now - self.last_warn.get(row_index, 0) > warn_every:
             self.last_warn[row_index] = now
@@ -100,72 +101,69 @@ def calibrate(cap, region):
 
 
 class Session:
-    def __init__(self, cap, region, rect, recalib=False, pick=None, watch_opts=None,
-                 saver: FrameSaver | None = None, debounce=3, fps=5, keep_needs_activity=True):
+    def __init__(self, cap, region, rect, pid, watch_opts=None, recalib=False, pick=None,
+                 saver: FrameSaver | None = None, debounce=3, fps=5):
         """
-        region: 화면 절대 좌표 캡처 영역. rect: 클라이언트 기준 (저장 키).
-        watch_opts: {row: dict(Watch 필드)} 행별 알림 설정. 없으면 기본.
+        region: 화면 절대 좌표 캡처 영역. rect: 클라이언트 기준. pid: 프로필 id (레이아웃 파일 키).
+        watch_opts: {row: Watch 필드}. None 이면 전 행을 기본값으로 감시(콘솔 개발용).
         """
-        self.cap, self.region, self.rect = cap, region, rect
+        self.cap, self.region, self.rect, self.pid = cap, region, rect, pid
         self.lib = GlyphLib.load(ROOT / "assets" / "glyphs.json")
-        self.unknown = UnknownGlyphs(ROOT / "assets" / "unknown")
         self.saver = saver or FrameSaver(ROOT / "tests" / "fixtures" / "auto")
+        self.unknown = UnknownGlyphs(ROOT / "assets" / "unknown", enabled=self.saver.enabled)
         self.notes = []
+        self.verify_ratio = None
 
         r = self._load_or_calibrate(recalib)
         if r is None:
-            raise RuntimeError("상태창을 못 찾음. 상태창이 잘 보이는 상태에서 다시 실행하거나 캡처 영역 확인")
+            raise RuntimeError("상태창을 못 찾음. 상태창이 잘 보이는 곳(어두운 배경)에서 다시 시도하거나 영역을 확인하세요")
         self.layout, self.fps_, self.sites = r
 
         rows = pick or list(range(len(self.layout.rows)))
         watches = []
         for i in rows:
-            if i not in self.fps_:
+            if i not in self.fps_ or (watch_opts is not None and i not in watch_opts):
                 continue
-            opts = dict(alert_under=[60, 30], alert_under_extended=[120, 60],
-                        keep=False, keep_delay=10, keep_interval=30)
+            opts = dict(alert_under=[60, 30], alert_under_extended=[120, 60], keep=False, keep_delay=10, keep_interval=30)
             opts.update((watch_opts or {}).get(i, {}))
             watches.append(Watch(self.fps_[i], opts.pop("label", f"행{i}"), row_index=i,
                                  base_width=self.sites[i].mask.shape[1] if i in self.sites else None, **opts))
-        self.tracker = Tracker(watches, debounce=debounce, keep_needs_activity=keep_needs_activity)
+        self.tracker = Tracker(watches, debounce=debounce)
         self.prev_time, self.unk_n = {}, {}
 
     # ------------------------------------------------------------ 준비
     def _load_or_calibrate(self, recalib):
-        saved = layout_store.load(LAYOUT_FILE)
-        if saved and (tuple(saved[0]) != tuple(self.rect) or not saved[3]):
-            saved = None
+        saved = layout_store.load(self.pid)
+        if saved and tuple(saved[0]) != tuple(self.rect):
+            saved = None                                   # 영역이 바뀜 → 다시 검출
         if saved and not recalib:
             _, L, fps, sites = saved
-            frame = self.cap.grab_sure(self.region)
-            # 검증은 획 자리로 (배경 무관). 이름 지문은 밝은 배경에서 비활성 글자를 못 잘라 못 믿는다
-            reads = [read_site(frame, site) for site in sites.values()]
-            ratio = sum(1 for r in reads if r.state != "unknown") / max(1, len(reads))
+            ratio = layout_store.verify(self.cap.grab_sure(self.region), sites)
+            self.verify_ratio = ratio
             if ratio >= VERIFY_MIN:
                 self.notes.append(f"저장된 레이아웃 사용 (획 자리 판정 {ratio:.0%})")
-                return L, fps, sites
-            self.notes.append(f"저장된 레이아웃 획 자리 판정 {ratio:.0%} → 재검출 시도")
+            else:
+                # 다른 캐릭터로 접속했거나 고정 목록이 바뀐 것. 저장본을 멋대로 덮어쓰지 않는다 (명시적 '레이아웃 다시'만)
+                self.notes.append(f"⚠ 저장된 레이아웃과 화면이 안 맞음 ({ratio:.0%}). 다른 캐릭터면 홈에서 전환, 고정 목록을 바꿨으면 '레이아웃 다시'")
+            return L, fps, sites
         r = calibrate(self.cap, self.region)
         if r is None:
             if saved:
-                self.notes.append("⚠ 재검출 실패 → 저장본 그대로 사용 (상태창이 가려졌거나 배경이 밝음)")
+                self.notes.append("⚠ 재검출 실패 → 저장본 그대로 사용")
                 return saved[1], saved[2], saved[3]
             return None
         layout, frame = r
-        prev = layout_store.load(LAYOUT_FILE)
-        if prev and len(layout.sections[0]) < len(prev[1].rows):
-            # 밝은 곳이거나 뭔가 가린 상태에서 검출하면 행이 덜 잡힌다. 더 나은 저장본을 덮어쓰지 않는다
-            self.notes.append(f"⚠ 새 검출 {len(layout.sections[0])}행 < 저장본 {len(prev[1].rows)}행 → 저장본 유지. "
-                              f"어두운 곳에서 상태창이 다 보일 때 --recalib 하세요")
-            return prev[1], prev[2], prev[3]
+        if saved and len(layout.sections[0]) < len(saved[1].rows) and not recalib:
+            self.notes.append(f"⚠ 새 검출 {len(layout.sections[0])}행 < 저장본 {len(saved[1].rows)}행 → 저장본 유지")
+            return saved[1], saved[2], saved[3]
         pinned = sorted(layout.sections[0])
         layout.rows = [layout.rows[i] for i in pinned]
         layout.sections = [list(range(len(layout.rows)))]
         layout.widen(frame.shape[1])
         states = parse_rows(frame, layout)
-        layout_store.save(LAYOUT_FILE, layout, states, self.rect, frame=frame)
-        _, L, fps, sites = layout_store.load(LAYOUT_FILE)
-        self.notes.append(f"검출 완료, {len(L.rows)}행 + 획 자리 저장 → {LAYOUT_FILE.name}")
+        layout_store.save(self.pid, layout, states, self.rect, frame)
+        _, L, fps, sites = layout_store.load(self.pid)
+        self.notes.append(f"검출 완료: {len(L.rows)}행 저장")
         return L, fps, sites
 
     # ------------------------------------------------------------ 처리
@@ -198,7 +196,7 @@ class Session:
             secs[s.index], times[s.index] = rr.seconds, rr.text
             if rr.seconds is not None and self.layout.time_right is None:
                 self.layout.time_right = self.layout.rows[s.index].text[0] + s.time_range[1]
-                layout_store.update_time_right(LAYOUT_FILE, self.layout.time_right)
+                layout_store.update_time_right(self.pid, self.layout.time_right)
                 notes.append(f"시간 끝 열 학습: {self.layout.time_right}")
             if rr.unknown:
                 if (m := self.unknown.add(s.index, s.time_img, rr)):

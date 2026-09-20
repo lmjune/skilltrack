@@ -1,31 +1,33 @@
 import tempfile
 from pathlib import Path
 
-from core.config import Config, WatchCfg, MirrorRow
+from core.config import Config, MirrorRow
 
 
-def test_roundtrip():
+def test_profiles_roundtrip():
     c = Config()
-    c.regions.status = [2880, 1230, 300, 550]
-    c.watch(5).label = "마나실드"; c.watch(5).keep = True; c.watch(5).keep_delay = 5
-    c.watch(2).alert_under = [30]; c.watch(2).alert_under_extended = [120, 60]
-    c.overlays.mirror_rows = [MirrorRow(row=2), MirrorRow(row=5, time=False, only_active=True)]
-    p = Path(tempfile.mktemp(suffix=".json"))
-    c.save(p)
+    a = c.add_profile("본캐"); b = c.add_profile("부캐")
+    c.profiles[a].regions.status = [2880, 1230, 300, 550]
+    c.profiles[a].watches[5] = c.profiles[a].watches.get(5) or __import__("core.config", fromlist=["WatchCfg"]).WatchCfg(label="마나실드", keep=True)
+    c.profiles[a].mirror_rows = [MirrorRow(row=5, time=False)]
+    c.current = b
+    p = Path(tempfile.mktemp(suffix=".json")); c.save(p)
     d = Config.load(p)
-    assert d.regions.status == [2880, 1230, 300, 550]
-    assert d.watches[5].label == "마나실드" and d.watches[5].keep and d.watches[5].keep_delay == 5
-    assert d.watches[2].alert_under == [30]
-    assert [m.row for m in d.overlays.mirror_rows] == [2, 5] and d.overlays.mirror_rows[1].only_active
-    assert d.watch_opts()[5]["label"] == "마나실드"
-    assert d.watch_opts()[2]["label"] == "행2"
+    assert set(d.profiles) == {a, b} and d.current == b
+    assert d.profiles[a].regions.status == [2880, 1230, 300, 550]
+    assert d.profiles[a].watches[5].label == "마나실드" and d.profiles[a].mirror_rows[0].row == 5
+    assert d.profiles[a].watch_opts()[5]["keep"] is True
+    d.remove_profile(b); assert d.current == a
 
 
-def test_missing_file_gives_defaults():
+def test_legacy_migration():
+    p = Path(tempfile.mktemp(suffix=".json"))
+    p.write_text('{"regions": {"status": [1,2,3,4]}, "watches": {"3": {"label": "x"}}, "overlays": {"mirror_rows": [{"row": 3}]}}', encoding="utf-8")
+    c = Config.load(p)
+    pr = c.profile()
+    assert pr and pr.regions.status == [1, 2, 3, 4] and pr.watches[3].label == "x" and pr.mirror_rows[0].row == 3
+
+
+def test_missing_file():
     c = Config.load(Path(tempfile.mktemp()))
-    assert c.general.fps == 5 and c.regions.status is None and c.watches == {}
-
-
-def test_disabled_watch_excluded():
-    c = Config(); c.watch(3).enabled = False; c.watch(4)
-    assert set(c.watch_opts()) == {4}
+    assert c.profiles == {} and c.profile() is None

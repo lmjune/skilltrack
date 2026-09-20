@@ -75,12 +75,11 @@ class _Track:
 
 
 class Tracker:
-    def __init__(self, watches: list[Watch], debounce: int = 3, missing_limit: int = 15, keep_needs_activity: bool = True):
+    def __init__(self, watches: list[Watch], debounce: int = 3, missing_limit: int = 15, keep_enabled: bool = True):
         self.tracks = [_Track(w) for w in watches]
         self.debounce = debounce
         self.missing_limit = missing_limit
-        # 반복 알림(유지 필수)은 감시 버프가 하나라도 켜져 있을 때만 (= 전투 중 근사). 마을에서 다 꺼두면 조용
-        self.keep_needs_activity = keep_needs_activity
+        self.keep_enabled = keep_enabled      # 반복 알림 마스터 토글. 유저가 전투 들어갈 때 켜고 나올 때 끈다
 
     def update(self, rows: list[RowState], seconds_of: dict, now=None) -> list[Event]:
         now = now if now is not None else time.time()
@@ -119,8 +118,7 @@ class Tracker:
                     t.last_keep = -1e9
 
             # --- 유지 필수: 꺼진 채로 유예 시간이 지나면 주기적으로 ---
-            busy = (not self.keep_needs_activity) or any(x.active for x in self.tracks)
-            if t.watch.keep and t.active is False and t.off_since is not None and busy:
+            if self.keep_enabled and t.watch.keep and t.active is False and t.off_since is not None:
                 if now - t.off_since >= t.watch.keep_delay and now - t.last_keep >= t.watch.keep_interval:
                     t.last_keep = now
                     events.append(Event("keep", t.watch.label, at=now))

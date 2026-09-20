@@ -1,16 +1,16 @@
 """
 설정 모델 + JSON 저장/불러오기. profiles/config.json 하나에 전부.
 
-구조:
-  general   fps, sound, diag_save (진단 프레임 저장), hotkeys
-  regions   status: 상태창 캡처 영역 (클라이언트 기준). skill: 스킬창들 (3b 에서 채움)
-  watches   {행번호: 알림 설정 + 라벨}  — 고정 섹션 행 기준
-  overlays  alert 위치, mirror 위치/배율/행 옵션
+  general    fps, 소리, 단축키 …  (공통)
+  overlays   알림/미러 위치·배율   (공통)
+  profiles   {id: Profile}         캐릭터별: 이름, 영역(상태창·스킬창·보스), 감시 설정, 미러 행
+  current    현재 선택된 프로필 id
 
-코드 어디서도 숫자를 하드코딩하지 않고 여기서 읽는다. 설정 UI 는 이 파일을 편집하는 화면이다.
+레이아웃(행 좌표·획 자리)은 profiles/layouts/<id>.json 에 프로필 id 로 저장된다.
 """
 from dataclasses import dataclass, field, asdict
 import json
+import uuid
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
@@ -21,18 +21,20 @@ CONFIG_FILE = ROOT / "profiles" / "config.json"
 class General:
     window_title: str = "마비노기"
     fps: int = 5
-    sound: bool = True
-    diag_save: bool = True                 # 의심 프레임 자동 저장 (배포 기본값은 False)
-    hotkey_toggle: str = "F9"
-    hotkey_settings: str = "F10"
-    hide_when_inactive: bool = True
-    sound_file: str = ""                   # 공통 알림 소리 (wav). 비우면 심각도별 비프
-    keep_needs_activity: bool = True       # 반복 알림은 감시 버프가 하나라도 켜져 있을 때만 (마을에선 조용)
+    sound: bool = False                    # 알림 소리. 기본 무음
+    sound_file: str = ""
+    diag_save: bool = True
+    active: bool = False                   # 마스터 스위치. 켜면 감시·알림·오버레이 전부 동작, 끄면 트레이만 (던전 들어갈 때 켜고 나와서 끔)
+    hotkeys_enabled: bool = False          # 단축키 사용 (키 상태 폴링. 게임에도 키가 들어가니 안 쓰는 키로)
+    hotkey_toggle: str = "F9"              # 마스터 스위치
+    hotkey_settings: str = "F10"           # 홈 화면
+    hotkey_edit: str = "Ctrl+F10"          # 배치 편집
+    hide_when_inactive: bool = True        # 켜져 있어도 게임 창이 뒤로 가면 오버레이 숨김
 
 
 @dataclass
 class WatchCfg:
-    label: str = ""                        # 비우면 "행N"
+    label: str = ""
     enabled: bool = True
     alert_off: bool = True
     alert_on: bool = False
@@ -51,6 +53,8 @@ class MirrorRow:
     time: bool = True
     only_active: bool = False
     dim_inactive: bool = True
+    pos: list | None = None          # [x, y] 화면 절대. None 이면 앞 항목 아래 자동
+    scale: float | None = None       # None 이면 overlays.mirror_scale
 
 
 @dataclass
@@ -61,26 +65,61 @@ class Overlays:
     mirror_pos: list = field(default_factory=lambda: [1500, 1300])
     mirror_scale: float = 2.0
     mirror_opacity: float = 0.95
-    mirror_rows: list = field(default_factory=list)      # [MirrorRow]
 
 
 @dataclass
 class Regions:
-    status: list | None = None            # [x, y, w, h] 클라이언트 기준. None 이면 미설정
-    skill: list = field(default_factory=list)   # 3b: [{"id":..., "rect":[...], "grid":{...}}]
+    status: list | None = None            # [x, y, w, h] 클라이언트 기준
+    skill: list = field(default_factory=list)   # [{"id", "rect", "grid"}]
+    boss: list | None = None              # 2차
+
+
+@dataclass
+class Profile:
+    name: str = "캐릭터"
+    regions: Regions = field(default_factory=Regions)
+    watches: dict = field(default_factory=dict)          # {row: WatchCfg}
+    mirror_rows: list = field(default_factory=list)      # [MirrorRow]
+
+    def watch_opts(self) -> dict:
+        out = {}
+        for row, w in self.watches.items():
+            if not w.enabled:
+                continue
+            out[row] = dict(label=w.label or f"행{row}", alert_off=w.alert_off, alert_on=w.alert_on,
+                            alert_under=list(w.alert_under), alert_under_extended=list(w.alert_under_extended),
+                            keep=w.keep, keep_delay=w.keep_delay, keep_interval=w.keep_interval)
+        return out
 
 
 @dataclass
 class Config:
     general: General = field(default_factory=General)
-    regions: Regions = field(default_factory=Regions)
-    watches: dict = field(default_factory=dict)          # {row(int): WatchCfg}
     overlays: Overlays = field(default_factory=Overlays)
+    profiles: dict = field(default_factory=dict)          # {id: Profile}
+    current: str = ""
+
+    # ------------------------------------------------------------ 프로필
+    def profile(self, pid=None) -> Profile | None:
+        return self.profiles.get(pid or self.current)
+
+    def add_profile(self, name) -> str:
+        pid = uuid.uuid4().hex[:8]
+        self.profiles[pid] = Profile(name=name or "캐릭터")
+        if not self.current:
+            self.current = pid
+        return pid
+
+    def remove_profile(self, pid):
+        self.profiles.pop(pid, None)
+        if self.current == pid:
+            self.current = next(iter(self.profiles), "")
 
     # ------------------------------------------------------------ 저장/로드
     def save(self, path=CONFIG_FILE):
         d = asdict(self)
-        d["watches"] = {str(k): v for k, v in d["watches"].items()}
+        for p in d["profiles"].values():
+            p["watches"] = {str(k): v for k, v in p["watches"].items()}
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         Path(path).write_text(json.dumps(d, ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -91,27 +130,28 @@ class Config:
             return cls()
         d = json.loads(p.read_text(encoding="utf-8"))
         c = cls()
-        c.general = General(**{k: v for k, v in d.get("general", {}).items() if k in General.__dataclass_fields__})
-        rg = d.get("regions", {})
-        c.regions = Regions(status=rg.get("status"), skill=rg.get("skill", []))
-        c.watches = {int(k): WatchCfg(**{kk: vv for kk, vv in v.items() if kk in WatchCfg.__dataclass_fields__})
-                     for k, v in d.get("watches", {}).items()}
-        ov = d.get("overlays", {})
-        rows = [MirrorRow(**{k: v for k, v in r.items() if k in MirrorRow.__dataclass_fields__}) for r in ov.get("mirror_rows", [])]
-        c.overlays = Overlays(**{k: v for k, v in ov.items() if k in Overlays.__dataclass_fields__ and k != "mirror_rows"}, mirror_rows=rows)
+        c.general = General(**_pick(d.get("general", {}), General))
+        c.overlays = Overlays(**_pick(d.get("overlays", {}), Overlays))
+        for pid, pd in d.get("profiles", {}).items():
+            c.profiles[pid] = _profile_from(pd)
+        c.current = d.get("current", "")
+        # 구버전 (regions/watches 가 최상위) → 프로필 하나로 옮김
+        if not c.profiles and (d.get("regions", {}).get("status") or d.get("watches")):
+            pid = c.add_profile("캐릭터")
+            c.profiles[pid] = _profile_from({"name": "캐릭터", "regions": d.get("regions", {}), "watches": d.get("watches", {}),
+                                             "mirror_rows": d.get("overlays", {}).get("mirror_rows", [])})
+        if c.current not in c.profiles:
+            c.current = next(iter(c.profiles), "")
         return c
 
-    # ------------------------------------------------------------ 편의
-    def watch(self, row: int) -> WatchCfg:
-        return self.watches.setdefault(row, WatchCfg())
 
-    def watch_opts(self) -> dict:
-        """Session 에 넘길 {row: Watch 필드} (enabled 인 것만)"""
-        out = {}
-        for row, w in self.watches.items():
-            if not w.enabled:
-                continue
-            out[row] = dict(label=w.label or f"행{row}", alert_off=w.alert_off, alert_on=w.alert_on,
-                            alert_under=list(w.alert_under), alert_under_extended=list(w.alert_under_extended),
-                            keep=w.keep, keep_delay=w.keep_delay, keep_interval=w.keep_interval)
-        return out
+def _pick(d, cls):
+    return {k: v for k, v in d.items() if k in cls.__dataclass_fields__}
+
+
+def _profile_from(pd):
+    rg = pd.get("regions", {})
+    ws = {int(k): WatchCfg(**_pick(v, WatchCfg)) for k, v in pd.get("watches", {}).items()}
+    ms = [MirrorRow(**_pick(r, MirrorRow)) for r in pd.get("mirror_rows", [])]
+    return Profile(name=pd.get("name", "캐릭터"), regions=Regions(status=rg.get("status"), skill=rg.get("skill", []), boss=rg.get("boss")),
+                   watches=ws, mirror_rows=ms)

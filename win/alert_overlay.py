@@ -38,8 +38,11 @@ FLAGS_EDIT = Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool
 
 
 class EditableOverlay(QWidget):
-    """편집 모드 공통: 클릭 통과를 풀고 드래그로 창을 옮긴다. 테두리와 제목을 그린다."""
+    """편집 모드 공통: 클릭 통과를 풀고 드래그로 창을 옮긴다. 테두리와 제목을 그린다.
+    Shift+드래그 = 그룹 이동 신호(group_drag), Shift+휠 = 그룹 배율 신호(group_wheel)."""
     moved = Signal()
+    group_drag = Signal(int, int)      # dx, dy
+    group_wheel = Signal(int)          # +1 / -1
 
     def _init_editable(self, title):
         self.edit_title = title
@@ -67,7 +70,24 @@ class EditableOverlay(QWidget):
 
     def mouseMoveEvent(self, e):
         if self.edit_mode and self._drag is not None:
-            self.move(e.globalPosition().toPoint() - self._drag); self.moved.emit()
+            new = e.globalPosition().toPoint() - self._drag
+            d = new - self.pos()
+            if e.modifiers() & Qt.ShiftModifier:
+                self.group_drag.emit(d.x(), d.y())
+            else:
+                self.move(new); self.moved.emit()
+
+    def wheelEvent(self, e):
+        if not self.edit_mode:
+            return
+        step = 1 if e.angleDelta().y() > 0 else -1
+        if e.modifiers() & Qt.ShiftModifier:
+            self.group_wheel.emit(step)
+        else:
+            self.on_wheel(step)
+
+    def on_wheel(self, step):
+        pass
 
     def mouseReleaseEvent(self, e):
         self._drag = None
@@ -138,11 +158,17 @@ class AlertOverlay(EditableOverlay):
         p.end()
 
 
+SOUND_DIR = Path(__file__).parent.parent / "assets" / "sounds"   # 기본 알림음 (직접 합성, 라이선스 없음)
+LEVEL_FILE = {"danger": "danger.wav", "warn": "warn.wav", "info": "info.wav", "ok": "info.wav"}
+
+
 def play_sound(level="info", sound_file=None):
+    """사용자 지정 wav → 없으면 심각도별 기본 wav → 그것도 없으면 비프."""
     try:
         import winsound
-        if sound_file and Path(sound_file).exists():
-            winsound.PlaySound(str(sound_file), winsound.SND_FILENAME | winsound.SND_ASYNC)
+        path = Path(sound_file) if sound_file else SOUND_DIR / LEVEL_FILE.get(level, "info.wav")
+        if path.exists():
+            winsound.PlaySound(str(path), winsound.SND_FILENAME | winsound.SND_ASYNC)
         else:
             f, ms = LEVEL_BEEP.get(level, LEVEL_BEEP["info"])
             winsound.Beep(f, ms)

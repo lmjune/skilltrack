@@ -127,7 +127,7 @@ def test_base_width_lowers_if_calibrated_while_extended():
 def test_keep_nags_while_off_after_delay():
     """유지 필수: 꺼진 지 10초 지나면 30초마다. 다시 켜지면 멈춤."""
     w = Watch(FP_A, "A", alert_off=False, keep=True, keep_delay=10, keep_interval=30)
-    t = Tracker([w], debounce=1, keep_needs_activity=False)
+    t = Tracker([w], debounce=1)
     out = []
     out += t.update([row(FP_A, True)], {}, now=0.0)
     for k in range(1, 100):                       # 99초 동안 꺼짐
@@ -141,7 +141,7 @@ def test_keep_nags_while_off_after_delay():
 
 def test_keep_ignores_brief_off():
     w = Watch(FP_A, "A", alert_off=False, keep=True, keep_delay=10)
-    t = Tracker([w], debounce=1, keep_needs_activity=False)
+    t = Tracker([w], debounce=1)
     out = t.update([row(FP_A, True)], {}, now=0.0)
     for k in range(1, 8):
         out += t.update([row(FP_A, False)], {}, now=float(k))   # 7초만 꺼짐
@@ -152,22 +152,22 @@ def test_keep_ignores_brief_off():
 def test_keep_starts_from_initial_off():
     """프로그램 켰을 때 이미 꺼져 있어도 (첫 확정) 유지 필수는 잔소리한다."""
     w = Watch(FP_A, "A", keep=True, keep_delay=5, keep_interval=100)
-    t = Tracker([w], debounce=1, keep_needs_activity=False)
+    t = Tracker([w], debounce=1)
     out = []
     for k in range(0, 10):
         out += t.update([row(FP_A, False)], {}, now=float(k))
     assert [e.kind for e in out] == ["keep"]
 
 
-def test_keep_silent_when_nothing_active():
-    """기본값: 감시 버프가 하나도 안 켜져 있으면(마을) 반복 알림 없음. 다른 버프가 켜지면 시작."""
+def test_keep_master_toggle():
+    """Tracker.keep_enabled 가 꺼져 있으면 잔소리 없음 (앱은 마스터 스위치로 tick 자체를 멈추지만, 추적기 단독으로도 제어 가능)."""
     a = Watch(FP_A, "A", keep=True, keep_delay=5, keep_interval=100, alert_off=False)
-    b = Watch(FP_B, "B", alert_off=False)
-    t = Tracker([a, b], debounce=1)
+    t = Tracker([a], debounce=1, keep_enabled=False)
     out = []
     for k in range(0, 20):
-        out += t.update([row(FP_A, False, 0), row(FP_B, False, 1)], {}, now=float(k))
+        out += t.update([row(FP_A, False)], {}, now=float(k))
     assert not out
+    t.keep_enabled = True
     for k in range(20, 40):
-        out += t.update([row(FP_A, False, 0), row(FP_B, True, 1)], {}, now=float(k))
+        out += t.update([row(FP_A, False)], {}, now=float(k))
     assert [e.kind for e in out] == ["keep"]

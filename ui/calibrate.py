@@ -30,9 +30,9 @@ HINT = {
 
 
 class Calibrator(QWidget):
-    def __init__(self, mode, cap, client, cfg):
+    def __init__(self, mode, cap, client, cfg, profile):
         super().__init__()
-        self.mode, self.cap, self.client, self.cfg = mode, cap, client, cfg
+        self.mode, self.cap, self.client, self.cfg, self.prof = mode, cap, client, cfg, profile
         self.start = self.end = None
         self.result = None            # 검출 결과 (화면 절대 좌표 박스 리스트, 설명)
         self.last_detect = 0.0
@@ -126,11 +126,11 @@ class Calibrator(QWidget):
         x, y, w, h = self.result["rect"]
         rel = [x - cx, y - cy, w, h]
         if self.mode == "status":
-            self.cfg.regions.status = rel
+            self.prof.regions.status = rel
         else:
             g = self.result["grid"]
-            n = len(self.cfg.regions.skill) + 1
-            self.cfg.regions.skill.append({
+            n = len(self.prof.regions.skill) + 1
+            self.prof.regions.skill.append({
                 "id": f"skill{n}", "rect": rel,
                 "grid": {"xs": [int(v) - cx for v in g.xs], "ys": [int(v) - cy for v in g.ys], "w": int(g.w), "h": int(g.h)},
             })
@@ -165,13 +165,15 @@ def main(mode):
     app = QApplication(sys.argv)
     from win.capture import Capture
     cfg = Config.load()
+    prof = cfg.profile()
+    if not prof:
+        print("먼저 트레이 앱(python win/run.py)에서 캐릭터를 추가하세요"); return
     hwnd = find_window(cfg.general.window_title)
     if not hwnd:
         print("게임 창을 못 찾음"); return
-    client = client_rect(hwnd)
-    w = Calibrator(mode, Capture(), client, cfg)
+    w = Calibrator(mode, Capture(), client_rect(hwnd), cfg, prof)
     import signal
-    signal.signal(signal.SIGINT, signal.SIG_DFL)          # 터미널 Ctrl+C 로도 종료되게
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
     ka = QTimer(); ka.timeout.connect(lambda: None); ka.start(200)
     sys.exit(app.exec())
 

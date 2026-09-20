@@ -17,9 +17,6 @@ from PySide6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from core.config import Config, WatchCfg, MirrorRow
 from core.status import parse_rows
-from core import layout_store
-from win.session import LAYOUT_FILE
-from win.window import find_window, client_rect
 from ui import theme
 
 
@@ -114,17 +111,17 @@ class RowCard(QFrame):
 
 
 class WatchesWindow(QWidget):
-    def __init__(self, cfg: Config, layout, frame):
+    def __init__(self, cfg: Config, prof, layout, frame, on_saved=None):
         super().__init__()
-        self.cfg = cfg
+        self.cfg, self.prof, self.on_saved = cfg, prof, on_saved
         self.setWindowTitle("skilltrack")
         self.resize(820, 780)
         states = {s.index: s for s in parse_rows(frame, layout)}
-        mirrors = {m.row: m for m in cfg.overlays.mirror_rows}
+        mirrors = {m.row: m for m in prof.mirror_rows}
 
         root = QVBoxLayout(self); root.setContentsMargins(0, 0, 0, 0); root.setSpacing(0)
         head = QWidget(); hv = QVBoxLayout(head); hv.setContentsMargins(28, 24, 28, 12); hv.setSpacing(4)
-        t = QLabel("감시 항목"); t.setObjectName("title"); hv.addWidget(t)
+        t = QLabel(f"감시 항목 — {prof.name}"); t.setObjectName("title"); hv.addWidget(t)
         s = QLabel("게임에서 고정(핀)한 버프 목록입니다. 감시할 것을 켜고, 필요하면 설정에서 알림 방식을 바꾸세요."); s.setObjectName("subtitle"); hv.addWidget(s)
         root.addWidget(head)
 
@@ -137,17 +134,16 @@ class WatchesWindow(QWidget):
             a, b = (st.name_range if st and st.name_range else (0, min(tw, 140)))
             thumb = np.concatenate([frame[iy:iy + ih, ix:ix + iw], np.zeros((ih, 4, 3), np.uint8),
                                     frame[ty:ty + th, tx + a:tx + b + 1][:ih]], axis=1)
-            card = RowCard(i, to_pixmap(thumb), cfg.watches.get(i, WatchCfg(enabled=False)), mirrors.get(i))
+            card = RowCard(i, to_pixmap(thumb), prof.watches.get(i, WatchCfg(enabled=False)), mirrors.get(i))
             self.cards.append(card); v.addWidget(card)
 
         sec = QLabel("공통"); sec.setObjectName("section"); v.addSpacing(8); v.addWidget(sec)
         common = QFrame(); common.setObjectName("card"); cl = QVBoxLayout(common); cl.setContentsMargins(16, 12, 16, 12)
         self.sound_on = QCheckBox("알림 소리"); self.sound_on.setChecked(cfg.general.sound)
-        self.sound = QLineEdit(cfg.general.sound_file); self.sound.setPlaceholderText("wav 파일 — 비우면 기본 비프음")
+        self.sound = QLineEdit(cfg.general.sound_file); self.sound.setPlaceholderText("wav 파일 — 비우면 기본 알림음 (심각도별)")
         pick = QPushButton("찾기"); pick.clicked.connect(self._pick_sound)
         cl.addLayout(hbox(self.sound_on, self.sound, pick, stretch_end=False))
-        self.keep_act = QCheckBox("반복 알림은 감시 버프가 하나라도 켜져 있을 때만"); self.keep_act.setChecked(cfg.general.keep_needs_activity)
-        cl.addLayout(hbox(self.keep_act, muted("마을처럼 아무것도 안 켠 상태에선 조용히")))
+
         v.addWidget(common); v.addStretch()
 
         foot = QWidget(); foot.setObjectName("footer"); fl = QHBoxLayout(foot); fl.setContentsMargins(28, 12, 28, 12)
@@ -162,34 +158,19 @@ class WatchesWindow(QWidget):
             self.sound.setText(f)
 
     def _save(self):
-        self.cfg.watches = {c.row: c.watch_cfg() for c in self.cards if c.enabled.isChecked()}
-        self.cfg.overlays.mirror_rows = [m for c in self.cards if (m := c.mirror_cfg())]
+        prof = self.prof
+        prof.watches = {c.row: c.watch_cfg() for c in self.cards if c.enabled.isChecked()}
+        prof.mirror_rows = [m for c in self.cards if (m := c.mirror_cfg())]
         self.cfg.general.sound_file = self.sound.text().strip()
         self.cfg.general.sound = self.sound_on.isChecked()
-        self.cfg.general.keep_needs_activity = self.keep_act.isChecked()
         self.cfg.save()
-        QMessageBox.information(self, "저장", "저장했습니다. 실행 중이면 run.py 를 다시 시작하세요.")
         self.close()
+        if self.on_saved:
+            self.on_saved()
 
 
 def main():
-    app = QApplication(sys.argv)
-    theme.apply(app)
-    from win.capture import Capture
-    cfg = Config.load()
-    saved = layout_store.load(LAYOUT_FILE)
-    if not cfg.regions.status or not saved:
-        QMessageBox.warning(None, "skilltrack", "먼저 상태창 영역을 설정하고(ui/calibrate.py status) run.py 를 한 번 실행해 레이아웃을 만드세요."); return
-    rect, layout, _, _ = saved
-    hwnd = find_window(cfg.general.window_title)
-    if not hwnd:
-        QMessageBox.warning(None, "skilltrack", "게임 창을 못 찾음"); return
-    cx, cy, _, _ = client_rect(hwnd)
-    x, y, w, h = rect
-    frame = Capture().grab_sure((cx + x, cy + y, w, h))
-    win = WatchesWindow(cfg, layout, frame)
-    win.show()
-    sys.exit(app.exec())
+    print("이 창은 트레이 앱(python win/run.py) 안에서 엽니다: 트레이 아이콘 → 감시 항목…")
 
 
 if __name__ == "__main__":
