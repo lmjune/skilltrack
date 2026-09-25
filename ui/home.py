@@ -49,7 +49,7 @@ class ProfileCard(QFrame):
             hint = "다음: 이 캐릭터로 전환하면 레이아웃을 자동으로 잡습니다 (어두운 곳에서)" if not current else "레이아웃을 잡는 중이거나 실패했습니다. 어두운 곳에서 [레이아웃 다시]"
         elif partial:
             hint = f"⚠ 밝은 곳에서 잡혀 일부 행({len(saved[1].rows) - len(saved[3])}개)을 판정 못 합니다. 어두운 곳에서 [레이아웃 다시]"
-        elif current and home.app.mismatch:
+        elif current and home.app.mismatch and home.app.mismatch_warned:
             hint = "⚠ 저장된 항목과 지금 상태창이 다릅니다. 고정 목록을 바꿨으면 [레이아웃 다시], 다른 캐릭터면 그 캐릭터로 전환"
         elif not n_watch:
             hint = "다음: [감시 항목] 에서 감시할 버프를 켜세요"
@@ -108,8 +108,10 @@ class HomeWindow(QWidget):
             self.sub.setText("캐릭터를 추가해서 시작하세요.")
             self.v.addWidget(muted("아직 캐릭터가 없습니다. 오른쪽 위 [+ 캐릭터 추가]"))
         else:
-            if app.sess and app.mismatch:
+            if app.sess and app.mismatch and app.mismatch_warned:
                 self.sub.setText("⚠ 상태창 항목이 변경되었습니다. 재설정해주세요 → 현재 캐릭터 카드의 [레이아웃 다시]")
+            elif app.sess and app.mismatch:
+                self.sub.setText("상태창 확인 중… (게임 화면이 앞에 있고 상태창이 보이면 곧 시작됩니다)")
             elif app.sess:
                 self.sub.setText("준비됨 · 켜면 감시가 시작됩니다" if not cfg.general.active else "감시 중")
             else:

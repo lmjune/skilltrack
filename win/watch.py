@@ -4,6 +4,7 @@
 사용법: python win/watch.py [행번호 ...] [--recalib] [--debug] [--boss] [--bossonly]
   --boss      상태창 + 보스 디버프 띠 같이 감시 (전체 화면 1회 캡처 후 잘라 씀)
   --bossonly  보스 띠만 (상태창 세션 안 만듦)
+  --rect x,y,w,h  상태창 영역 (클라이언트 기준). 기본 STATUS_RECT 는 4K 기준이라 다른 해상도에선 꼭 지정
   --learn     모르는 디버프 아이콘을 assets/boss_icons 에 등록 (기본은 프레임 저장만)
   --debug 창에서 s: 상태창 프레임 저장, b: 보스 바 영역 저장 (무손실, tests/fixtures/boss/auto), q: 창 닫기
 """
@@ -61,15 +62,18 @@ def boss_lines(br, bs):
     return out
 
 
-def main(pick, recalib, debug, boss=False, boss_only=False):
+def main(pick, recalib, debug, boss=False, boss_only=False, rect=None):
     hwnd = find_window("마비노기")
     cx, cy, cw, ch = client_rect(hwnd)
-    sx, sy, sw, sh = STATUS_RECT
+    sx, sy, sw, sh = rect or STATUS_RECT
+    if not boss_only and (sx + sw > cw or sy + sh > ch):
+        print(f"상태창 영역 {(sx, sy, sw, sh)} 이 클라이언트 {cw}×{ch} 밖입니다. --rect x,y,w,h 로 지정하거나 --bossonly 로 실행하세요")
+        return
     cap = Capture()
     con = Console()
     sess = None
     if not boss_only:
-        sess = Session(cap, (cx + sx, cy + sy, sw, sh), STATUS_RECT, pid="_console", recalib=recalib, pick=pick,
+        sess = Session(cap, (cx + sx, cy + sy, sw, sh), (sx, sy, sw, sh), pid="_console", recalib=recalib, pick=pick,
                        watch_opts=None)
         for n in sess.notes:
             con.log(n)
@@ -86,7 +90,7 @@ def main(pick, recalib, debug, boss=False, boss_only=False):
     while True:
         t0 = time.time()
         if use_full:
-            full = cap.grab((cx, cy, cw, ch))
+            full = cap.grab((cx, cy, cw, ch))                 # 클라이언트 영역만 캡처 → 클라이언트 기준 좌표 그대로
             frame = None if full is None else (full[sy:sy + sh, sx:sx + sw] if sess else full)
             bframe = None if full is None else full[by:by + bh, bx:bx + bw]
         else:
@@ -117,7 +121,7 @@ def main(pick, recalib, debug, boss=False, boss_only=False):
                     debug = False; cv2.destroyAllWindows()
             time.sleep(max(0, 1 / FPS - (time.time() - t0)))
             continue
-        if frame is not None:
+        if frame is not None and frame.shape[0] == sh and frame.shape[1] == sw:
             r = sess.process(frame)
             for n in r.notes:
                 con.log(n)
@@ -167,7 +171,12 @@ def main(pick, recalib, debug, boss=False, boss_only=False):
 if __name__ == "__main__":
     args = sys.argv[1:]
     try:
+        rect = None
+        for a in args:
+            if a.startswith("--rect"):
+                v = a.split("=", 1)[1] if "=" in a else args[args.index(a) + 1]
+                rect = tuple(int(t) for t in v.split(","))
         main([int(a) for a in args if a.isdigit()], "--recalib" in args, "--debug" in args,
-             boss="--boss" in args, boss_only="--bossonly" in args)
+             boss="--boss" in args, boss_only="--bossonly" in args, rect=rect)
     except KeyboardInterrupt:
         print("\n종료")

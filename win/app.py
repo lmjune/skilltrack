@@ -6,6 +6,7 @@ skilltrack 본체: 트레이 아이콘 + 전역 단축키 + 감시 세션 + 오�
 설정을 저장하면 재시작 없이 바로 반영된다.
 """
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -54,6 +55,8 @@ class App:
             self.cfg.save()
         self.sess = None
         self.mismatch = False
+        self.mismatch_since = None                # 레이아웃 불일치가 시작된 시각 (재확인 중). 경고는 10초 지속 시 1회
+        self.mismatch_warned = False
         self.overlay = self.mirror = self.skills = None
         self.boss = None                          # BossSession (프로필에서 켰을 때)
         self.boss_ov = None                       # BossOverlay
@@ -135,6 +138,9 @@ class App:
         cx, cy, cw, ch = client_rect(hwnd)
         self.client_xy, self.client_wh = (cx, cy), (cw, ch)
         x, y, w, h = prof.regions.status
+        # dxcam 은 막 만들어진 직후 검은/이전 프레임을 주는 일이 잦다 → 몇 장 버리고 시작 (첫 판정이 그걸로 틀리는 것 방지)
+        for _ in range(3):
+            self.cap.grab(); time.sleep(0.05)
         try:
             saver = FrameSaver(DIAG / "auto", enabled=g.diag_save)
             self.sess = Session(self.cap, (cx + x, cy + y, w, h), tuple(prof.regions.status), pid=self.cfg.current,
@@ -144,19 +150,38 @@ class App:
         for n in self.sess.notes:
             print(n)
         self._start_boss(prof)
-        self.mismatch = self.sess.verify_ratio is not None and self.sess.verify_ratio < 0.6
         self._rebuild_overlays()
-        if self.mismatch:
-            # 고정 목록이 바뀌었거나 다른 캐릭터. 틀린 레이아웃으로 감시하지 않는다
+        self.mismatch = self.sess.verify_ratio is not None and self.sess.verify_ratio < 0.6
+        self.mismatch_since, self.mismatch_warned = (time.time() if self.mismatch else None), False
+        # 안 맞아도 틱은 돌린다: 감시는 보류하고 1초마다 다시 확인 (시작 직후 검은 프레임, 로딩 화면, 밝은 곳 등 일시적 원인).
+        # 진짜로 바뀐 것(다른 캐릭터·고정 목록 변경)은 10초 넘게 계속 안 맞을 때 경고
+        self.timer.start(int(1000 / g.fps))
+        if self.cfg.general.active and not self.mismatch:
+            self.notify(f"{prof.name} — 감시 {len(self.sess.tracker.tracks)}개", "info", 2.5)
+        self._refresh_home()
+
+    def _recheck_layout(self, frame):
+        """불일치 상태에서 1초마다: 맞으면 감시 시작, 10초 넘게 안 맞으면 경고 1회."""
+        from core import layout_store
+        now = time.time()
+        if now - getattr(self, "_recheck_at", 0) < 1.0:
+            return
+        self._recheck_at = now
+        ratio = layout_store.verify(frame, self.sess.sites)
+        if ratio >= 0.6:
+            self.mismatch, self.mismatch_since, self.last_error = False, None, ""
+            print(f"[{datetime.now():%H:%M:%S}] 레이아웃 확인됨 ({ratio:.0%}) — 감시 시작")
+            if self.active:
+                self.notify(f"{self.cfg.profile().name} — 감시 {len(self.sess.tracker.tracks)}개", "info", 2.5)
+            self._refresh_home()
+        elif not self.mismatch_warned and now - self.mismatch_since > 10:
+            self.mismatch_warned = True
+            prof = self.cfg.profile()
             self.last_error = f"'{prof.name}' 상태창 항목이 변경되었습니다. 재설정해주세요 (홈 → 레이아웃 다시)"
             self.tray.showMessage(APP_NAME, self.last_error)
             if self.active:
                 self.notify("상태창 항목이 변경됨 — 홈에서 '레이아웃 다시'", "warn", 8)
-            self._refresh_home(); return
-        self.timer.start(int(1000 / g.fps))
-        if self.cfg.general.active:
-            self.notify(f"{prof.name} — 감시 {len(self.sess.tracker.tracks)}개", "info", 2.5)
-        self._refresh_home()
+            self._refresh_home()
 
     def _start_boss(self, prof):
         """보스 디버프 세션. 프로필에서 껐으면 None. 감시 목록이 비어도 인식·아이콘 수집은 한다."""
@@ -214,7 +239,7 @@ class App:
         return self.cfg.general.active
 
     def tick(self):
-        if not self.active or not self.sess or self.mismatch:
+        if not self.active or not self.sess:
             return
         if self.cfg.general.hide_when_inactive and not self.edit:
             import win32gui
@@ -232,6 +257,9 @@ class App:
         x, y, w, h = self.sess.region
         frame = full[y:y + h, x:x + w]
         if frame.shape[0] != h or frame.shape[1] != w:
+            return
+        if self.mismatch:
+            self._recheck_layout(frame)          # 맞을 때까지 감시 보류 (틀린 레이아웃으로 읽지 않는다)
             return
         if self.skills:
             self.skills.update(full)
@@ -283,7 +311,7 @@ class App:
         if g.active and not self.sess:
             self.start_session()
         self._apply_show(g.active)
-        if g.active and self.mismatch:
+        if g.active and self.mismatch and self.mismatch_warned:
             self.notify("상태창 항목이 변경됨 — 홈에서 '레이아웃 다시'", "warn", 8)
         elif g.active:
             self.notify("켜짐 — 감시 중", "ok", 2.0)
