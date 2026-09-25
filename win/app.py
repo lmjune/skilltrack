@@ -62,6 +62,7 @@ class App:
         self.boss_ov = None                       # BossOverlay
         self.client_xy = (0, 0)
         self.client_wh = (3840, 2160)
+        self._last_sync = 0.0                     # _sync_client 마지막 확인 시각
         self.edit = None                          # 편집 모드 상태
         self.windows = {}                         # 열린 설정 창
         self.last_error = ""
@@ -251,6 +252,8 @@ class App:
         # 한 틱에 전체 화면을 한 번만 캡처해서 잘라 쓴다.
         # (dxcam 은 새 프레임이 없으면 None 을 주는데, 영역별로 따로 grab 하면 앞의 grab 이 '새 프레임'을
         #  소비해 뒤의 상태창 grab 이 자주 None → 처리가 드문드문 → 시간 추정이 어긋남)
+        if self._sync_client():
+            return              # 게임 창이 움직였거나 크기가 바뀜 → 세션을 새 좌표로 다시 시작했음
         full = self.cap.grab()
         if full is None:
             return
@@ -279,10 +282,30 @@ class App:
             print(f"[{datetime.now():%H:%M:%S}] {text}")
             self.overlay.push(text, level, dur, sound=g.sound, sound_file=g.sound_file or None)
 
+    def _sync_client(self):
+        """1초마다 게임 창 클라이언트 좌표를 다시 읽는다. 움직이거나 크기가 바뀌면 세션 재시작
+        (저장된 영역은 전부 클라이언트 기준이라 재캘리브레이션은 필요 없다). 배치 편집 중에는 건드리지 않는다."""
+        now = time.time()
+        if self.edit or now - self._last_sync < 1.0:
+            return False
+        self._last_sync = now
+        hwnd = find_window(self.cfg.general.window_title)
+        if not hwnd:
+            return False
+        cx, cy, cw, ch = client_rect(hwnd)
+        if cw <= 0 or ch <= 0 or cx <= -30000:      # 최소화된 창 (-32000, -32000)
+            return False
+        if (cx, cy) != self.client_xy or (cw, ch) != self.client_wh:
+            print(f"[{datetime.now():%H:%M:%S}] 게임 창 이동/크기 변경 → {cw}×{ch} @ ({cx},{cy}), 세션 재시작")
+            self.start_session()
+            return True
+        return False
+
     def _boss_tick(self, full):
         prof = self.cfg.profile()
         bx, by, bw, bh = tuple(prof.regions.boss) if (prof and prof.regions.boss) else boss_rect(*self.client_wh)
-        bframe = full[by:by + bh, bx:bx + bw]
+        cx, cy = self.client_xy                      # 영역은 클라이언트 기준, full 은 모니터 전체
+        bframe = full[cy + by:cy + by + bh, cx + bx:cx + bx + bw]
         if bframe.shape[0] != bh or bframe.shape[1] != bw:
             return
         br = self.boss.process(bframe)
