@@ -24,7 +24,7 @@ class General:
     fps: int = 5
     sound: bool = False                    # 알림 소리. 기본 무음
     sound_file: str = ""
-    diag_save: bool = True
+    diag_save: bool = False
     active: bool = False                   # 마스터 스위치. 켜면 감시·알림·오버레이 전부 동작, 끄면 트레이만 (던전 들어갈 때 켜고 나와서 끔)
     hotkeys_enabled: bool = False          # 단축키 사용 (키 상태 폴링. 게임에도 키가 들어가니 안 쓰는 키로)
     hotkey_toggle: str = "F9"              # 마스터 스위치

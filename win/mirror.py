@@ -7,7 +7,7 @@ import numpy as np
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QImage, QPainter, QPixmap
 
-from win.alert_overlay import EditableOverlay
+from win.alert_overlay import EditableOverlay, on_any_screen, primary_rect
 
 GAP = 6
 
@@ -86,6 +86,25 @@ class MirrorGroup:
             it.set_edit(on)
             if on:
                 it.setVisible(True)
+        if on:
+            self.ensure_visible()
+
+    def ensure_visible(self):
+        """항목 중 하나라도 화면 밖이면 그룹 전체를 주 모니터 가운데로 옮긴다 (항목끼리 배치는 유지).
+        그래도 밖에 남는 항목(그룹이 화면보다 큼 등)은 하나씩 안으로. 옮겼으면 True."""
+        if not self.items or all(on_any_screen(it.frameGeometry()) for it in self.items):
+            return False
+        g = primary_rect()
+        left = min(it.x() for it in self.items); top = min(it.y() for it in self.items)
+        right = max(it.x() + it.width() for it in self.items); bottom = max(it.y() + it.height() for it in self.items)
+        tx = g.center().x() - (right - left) // 2
+        ty = g.center().y() - (bottom - top) // 2
+        tx = max(g.left(), min(tx, g.right() - (right - left)))
+        ty = max(g.top(), min(ty, g.bottom() - (bottom - top)))
+        self._group_move(tx - left, ty - top)
+        for it in self.items:
+            it.ensure_on_screen()
+        return True
 
     def set_scale_all(self, s):
         for it in self.items:

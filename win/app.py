@@ -233,6 +233,13 @@ class App:
             labels = {r: (w.label or f"행 {r}") for r, w in prof.watches.items()}
             self.mirror = StatusMirrorGroup(self.sess.layout, opts, default_scale=ov.mirror_scale, opacity=ov.mirror_opacity,
                                             origin=tuple(ov.mirror_pos), labels=labels)
+        # 저장된 위치/기본 위치가 이 모니터 기준으로 화면 밖이면 안으로 (4K 좌표 기본값, 윈도우 배율, 모니터 변경)
+        self.overlay.ensure_on_screen()
+        if self.boss_ov:
+            self.boss_ov.ensure_on_screen()
+        for g in (self.skills, self.mirror):
+            if g:
+                g.ensure_visible()
         self._apply_show(self.active)
 
     @property

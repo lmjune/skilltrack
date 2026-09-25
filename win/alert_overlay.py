@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, QRectF, Signal, QPoint
-from PySide6.QtGui import QColor, QFont, QPainter, QPen
+from PySide6.QtGui import QColor, QFont, QPainter, QPen, QGuiApplication
 from PySide6.QtWidgets import QWidget
 
 WDA_EXCLUDEFROMCAPTURE = 0x11
@@ -48,6 +48,16 @@ FLAGS_RUN = Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool | Qt.Wind
 FLAGS_EDIT = Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool
 
 
+def on_any_screen(rect) -> bool:
+    """창 중심이 어느 모니터 안에 있는지 (Qt 논리 좌표. 윈도우 배율 150% 면 4K 도 2560×1440 으로 보인다)."""
+    return QGuiApplication.screenAt(rect.center()) is not None
+
+
+def primary_rect():
+    """주 모니터의 작업 영역 (작업 표시줄 제외, 논리 좌표)."""
+    return QGuiApplication.primaryScreen().availableGeometry()
+
+
 class EditableOverlay(QWidget):
     """편집 모드 공통: 클릭 통과를 풀고 드래그로 창을 옮긴다. 테두리와 제목을 그린다.
     Shift+드래그 = 그룹 이동 신호(group_drag), Shift+휠 = 그룹 배율 신호(group_wheel)."""
@@ -78,6 +88,20 @@ class EditableOverlay(QWidget):
         self.edit_mode = on
         self._apply_flags()
         self.update()
+        if on:
+            self.ensure_on_screen()
+
+    def ensure_on_screen(self, fallback=None):
+        """화면 밖에 있으면 주 모니터 안으로 옮긴다. fallback=(x, y) 를 주면 그 자리, 없으면 가장 가까운 가장자리.
+        저장된 위치가 다른 해상도·배율 기준이라 안 보이는 경우를 막는다. 옮겼으면 True."""
+        if on_any_screen(self.frameGeometry()):
+            return False
+        g = primary_rect()
+        x, y = fallback if fallback else (self.x(), self.y())
+        x = max(g.left(), min(int(x), g.right() - self.width()))
+        y = max(g.top(), min(int(y), g.bottom() - self.height()))
+        self.move(x, y); self.moved.emit()
+        return True
 
     def mousePressEvent(self, e):
         if self.edit_mode and e.button() == Qt.LeftButton:
