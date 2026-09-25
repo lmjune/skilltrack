@@ -15,7 +15,7 @@ from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor, QAction
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QMessageBox
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from core.config import Config, CONFIG_FILE
+from core.config import Config, CONFIG_FILE, skill_capture_rect
 from win.session import Session, FrameSaver, event_text
 from core.paths import ASSETS, DIAG, VERSION, APP_NAME
 from win.alert_overlay import AlertOverlay, set_capturable
@@ -127,37 +127,43 @@ class App:
     # ------------------------------------------------------------ 세션
     def start_session(self, recalib=False):
         self.timer.stop(); self.sess = None; self.last_error = ""
+        self.mismatch, self.mismatch_since, self.mismatch_warned = False, None, False
         self.cfg = Config.load()
         g, prof = self.cfg.general, self.cfg.profile()
         if not prof:
             self.last_error = "캐릭터가 없습니다"; self._refresh_home(); return
-        if not prof.regions.status:
-            self.last_error = f"'{prof.name}' 상태창 영역이 없습니다 → [영역 설정]"; self._refresh_home(); return
         hwnd = find_window(g.window_title)
         if not hwnd:
             self.last_error = f"게임 창을 못 찾음: '{g.window_title}'"; self.tray.showMessage(APP_NAME, self.last_error); self._refresh_home(); return
         cx, cy, cw, ch = client_rect(hwnd)
         self.client_xy, self.client_wh = (cx, cy), (cw, ch)
-        x, y, w, h = prof.regions.status
         # dxcam 은 막 만들어진 직후 검은/이전 프레임을 주는 일이 잦다 → 몇 장 버리고 시작 (첫 판정이 그걸로 틀리는 것 방지)
         for _ in range(3):
             self.cap.grab(); time.sleep(0.05)
-        try:
-            saver = FrameSaver(DIAG / "auto", enabled=g.diag_save)
-            self.sess = Session(self.cap, (cx + x, cy + y, w, h), tuple(prof.regions.status), pid=self.cfg.current,
-                                watch_opts=prof.watch_opts(), recalib=recalib, saver=saver)
-        except RuntimeError as e:
-            self.last_error = str(e); self.tray.showMessage(APP_NAME, str(e)); self._refresh_home(); return
-        for n in self.sess.notes:
-            print(n)
+        # 상태창 감시는 선택: 영역이 없거나 준비에 실패해도 스킬 표시·보스 디버프는 따로 돈다
+        if prof.regions.status:
+            x, y, w, h = prof.regions.status
+            try:
+                saver = FrameSaver(DIAG / "auto", enabled=g.diag_save)
+                self.sess = Session(self.cap, (cx + x, cy + y, w, h), tuple(prof.regions.status), pid=self.cfg.current,
+                                    watch_opts=prof.watch_opts(), recalib=recalib, saver=saver)
+            except RuntimeError as e:
+                self.last_error = str(e); self.tray.showMessage(APP_NAME, str(e))
+            if self.sess:
+                for n in self.sess.notes:
+                    print(n)
+                # 안 맞아도 틱은 돌린다: 상태창 감시만 보류하고 1초마다 다시 확인 (시작 직후 검은 프레임, 로딩 화면, 밝은 곳 등 일시적 원인).
+                # 진짜로 바뀐 것(다른 캐릭터·고정 목록 변경)은 10초 넘게 계속 안 맞을 때 경고
+                self.mismatch = self.sess.verify_ratio is not None and self.sess.verify_ratio < 0.6
+                self.mismatch_since = time.time() if self.mismatch else None
+        else:
+            self.last_error = f"'{prof.name}' 상태창 영역이 없습니다 → [영역 설정] (스킬 표시·보스 디버프는 동작)"
         self._start_boss(prof)
         self._rebuild_overlays()
-        self.mismatch = self.sess.verify_ratio is not None and self.sess.verify_ratio < 0.6
-        self.mismatch_since, self.mismatch_warned = (time.time() if self.mismatch else None), False
-        # 안 맞아도 틱은 돌린다: 감시는 보류하고 1초마다 다시 확인 (시작 직후 검은 프레임, 로딩 화면, 밝은 곳 등 일시적 원인).
-        # 진짜로 바뀐 것(다른 캐릭터·고정 목록 변경)은 10초 넘게 계속 안 맞을 때 경고
+        if not (self.sess or self.boss or self.skills):
+            self._refresh_home(); return            # 돌릴 게 하나도 없음
         self.timer.start(int(1000 / g.fps))
-        if self.cfg.general.active and not self.mismatch:
+        if self.cfg.general.active and self.sess and not self.mismatch:
             self.notify(f"{prof.name} — 감시 {len(self.sess.tracker.tracks)}개", "info", 2.5)
         self._refresh_home()
 
@@ -247,7 +253,7 @@ class App:
         return self.cfg.general.active
 
     def tick(self):
-        if not self.active or not self.sess:
+        if not self.active:
             return
         if self.cfg.general.hide_when_inactive and not self.edit:
             import win32gui
@@ -264,17 +270,20 @@ class App:
         full = self.cap.grab()
         if full is None:
             return
+        # 스킬 표시·보스 디버프는 상태창과 독립 (상태창 영역이 없거나 레이아웃이 안 맞아도 동작)
+        if self.skills:
+            self.skills.update(full)
+        if self.boss:
+            self._boss_tick(full)
+        if not self.sess:
+            return
         x, y, w, h = self.sess.region
         frame = full[y:y + h, x:x + w]
         if frame.shape[0] != h or frame.shape[1] != w:
             return
         if self.mismatch:
-            self._recheck_layout(frame)          # 맞을 때까지 감시 보류 (틀린 레이아웃으로 읽지 않는다)
+            self._recheck_layout(frame)          # 맞을 때까지 상태창 감시만 보류 (틀린 레이아웃으로 읽지 않는다)
             return
-        if self.skills:
-            self.skills.update(full)
-        if self.boss:
-            self._boss_tick(full)
         r = self.sess.process(frame)
         if self.mirror:
             self.mirror.update_from(frame, r)
@@ -338,7 +347,7 @@ class App:
         g.active = (not g.active) if on is None else bool(on)
         self.cfg.save(); self._active_text()
         self.tray.setIcon(make_icon(paused=not g.active))
-        if g.active and not self.sess:
+        if g.active and not self.timer.isActive():
             self.start_session()
         self._apply_show(g.active)
         if g.active and self.mismatch and self.mismatch_warned:
@@ -462,8 +471,12 @@ class App:
             cx, cy, _, _ = client_rect(hwnd); self.client_xy = (cx, cy)
         frames = {}
         for rg in prof.regions.skill:
-            x, y, w, h = rg["rect"]
-            f = self.cap.grab_sure((cx + x, cy + y, w, h))
+            x, y, w, h = skill_capture_rect(rg)
+            try:
+                f = self.cap.grab_sure((cx + x, cy + y, w, h))
+            except Exception as ex:
+                print(f"[{datetime.now():%H:%M:%S}] 스킬창 {rg['id']} 캡처 실패: {ex}")
+                continue
             frames[rg["id"]] = (f, x, y)
         w = SkillsWindow(self.cfg, prof, frames, on_saved=self._rebuild_overlays, app=self)
         self._show(w, "skills")

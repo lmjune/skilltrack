@@ -10,7 +10,7 @@
 import sys
 from pathlib import Path
 
-VERSION = "1.0.1"
+VERSION = "1.0.2"
 APP_NAME = "마비오라"        # 표시 이름 (창 제목·트레이). 저장소/모듈 이름은 skilltrack 그대로
 EXE_NAME = "mabiaura"       # exe·로그 파일 이름
 FROZEN = getattr(sys, "frozen", False)

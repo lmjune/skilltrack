@@ -16,6 +16,8 @@ MODES = [("always", "항상 표시"), ("cooling", "쿨타임 중에만"), ("dimm
 
 
 def to_pixmap(bgr, scale=1.0):
+    if bgr is None or bgr.size == 0:
+        return QPixmap()          # 슬롯이 캡처 영역 밖 (예전 버전에서 저장한 영역) → 빈 칸으로
     bgr = np.ascontiguousarray(bgr)
     rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
     qi = QImage(rgb.data, rgb.shape[1], rgb.shape[0], 3 * rgb.shape[1], QImage.Format_RGB888)
@@ -79,7 +81,8 @@ class SkillsWindow(QWidget):
                     slot = r * cols + c
                     if fr is not None:
                         f, rx, ry = fr
-                        thumb = to_pixmap(f[y - ry:y - ry + g["h"], x - rx:x - rx + g["w"]])
+                        y0, x0 = y - ry, x - rx
+                        thumb = to_pixmap(f[y0:y0 + g["h"], x0:x0 + g["w"]] if y0 >= 0 and x0 >= 0 else None)
                     else:
                         thumb = QPixmap()
                     cell = SlotCell(rid, slot, thumb, existing.get((rid, slot)))

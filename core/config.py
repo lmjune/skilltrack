@@ -87,6 +87,17 @@ class Overlays:
     boss_opacity: float = 0.95
 
 
+def skill_capture_rect(rg: dict) -> tuple:
+    """스킬창 영역의 실제 캡처 rect (클라이언트 기준) = 저장된 드래그 rect 와 격자 슬롯 전체를 합친 것.
+    격자 검출은 드래그 rect 를 넓혀서 찾으므로 슬롯이 드래그 밖으로 나갈 수 있다 → 드래그 rect 만 잡으면 잘린다."""
+    x, y, w, h = rg["rect"]
+    g = rg["grid"]
+    x0 = min([x] + [int(v) for v in g["xs"]]); y0 = min([y] + [int(v) for v in g["ys"]])
+    x1 = max([x + w] + [int(v) + g["w"] for v in g["xs"]]); y1 = max([y + h] + [int(v) + g["h"] for v in g["ys"]])
+    x0, y0 = max(0, x0), max(0, y0)
+    return x0, y0, x1 - x0, y1 - y0
+
+
 @dataclass
 class SkillItem:
     region: str                      # regions.skill 의 id

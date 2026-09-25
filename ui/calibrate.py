@@ -17,7 +17,7 @@ from PySide6.QtGui import QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import QApplication, QWidget
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from core.config import Config
+from core.config import Config, skill_capture_rect
 from core.rows import detect_rows
 from core.status import parse_rows
 from core.grid import detect_grid_in
@@ -130,6 +130,7 @@ class Calibrator(QWidget):
         else:
             g = self.result["grid"]
             entry = {"rect": rel, "grid": {"xs": [int(v) - cx for v in g.xs], "ys": [int(v) - cy for v in g.ys], "w": int(g.w), "h": int(g.h)}}
+            entry["rect"] = list(skill_capture_rect(entry))     # 드래그 rect → 격자 전체를 덮는 rect (슬롯이 잘리지 않게)
             if self.redo_id and any(r["id"] == self.redo_id for r in self.prof.regions.skill):
                 for r in self.prof.regions.skill:
                     if r["id"] == self.redo_id:

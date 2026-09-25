@@ -2,6 +2,7 @@
 스킬 미러: 스킬창 슬롯마다 MirrorItem. 캡처는 스킬창 영역 단위로 한 번씩 하고 슬롯을 잘라 쓴다.
 표시 모드: always(항상) / cooling(쿨 중에만) / dimmed(항상, 준비되면 흐리게)
 """
+from core.config import skill_capture_rect
 from core.cooldown import SlotCooldown
 from win.mirror import MirrorItem, MirrorGroup
 
@@ -36,7 +37,7 @@ class SkillMirrorGroup(MirrorGroup):
         for rid, rg in self.regions.items():
             if not any(k[1] == rid for k in self.cfg):
                 continue
-            x, y, w, h = rg["rect"]
+            x, y, w, h = skill_capture_rect(rg)
             if full is not None:
                 f = full[self.cy + y:self.cy + y + h, self.cx + x:self.cx + x + w]
             else:
