@@ -64,6 +64,7 @@ class App:
         self.client_xy = (0, 0)
         self.client_wh = (3840, 2160)
         self._last_sync = 0.0                     # _sync_client 마지막 확인 시각
+        self._offscreen = False                   # 게임 창이 캡처 모니터 밖 (다른 모니터로 옮김)
         self.edit = None                          # 편집 모드 상태
         self.windows = {}                         # 열린 설정 창
         self.last_error = ""
@@ -139,6 +140,12 @@ class App:
             self.last_error = f"게임 창을 못 찾음: '{g.window_title}'"; self.tray.showMessage(APP_NAME, self.last_error); self._refresh_home(); return
         cx, cy, cw, ch = client_rect(hwnd)
         self.client_xy, self.client_wh = (cx, cy), (cw, ch)
+        self._offscreen = not self.cap.contains(cx, cy, cw, ch)
+        if self._offscreen:
+            # 다른 모니터로 옮긴 창: 캡처할 수 없음. 타이머는 돌려서 주 모니터로 돌아오면 _sync_client 가 다시 시작
+            self.last_error = "게임 창이 주 모니터 밖에 있습니다 (캡처는 주 모니터만). 주 모니터로 옮기면 다시 시작합니다"
+            self.notify(self.last_error, "warn", 5.0)
+            self.timer.start(int(1000 / g.fps)); self._refresh_home(); return
         # dxcam 은 막 만들어진 직후 검은/이전 프레임을 주는 일이 잦다 → 몇 장 버리고 시작 (첫 판정이 그걸로 틀리는 것 방지)
         for _ in range(3):
             self.cap.grab(); time.sleep(0.05)
@@ -149,7 +156,7 @@ class App:
                 saver = FrameSaver(DIAG / "auto", enabled=g.diag_save)
                 self.sess = Session(self.cap, (cx + x, cy + y, w, h), tuple(prof.regions.status), pid=self.cfg.current,
                                     watch_opts=prof.watch_opts(), recalib=recalib, saver=saver)
-            except RuntimeError as e:
+            except (RuntimeError, ValueError) as e:      # ValueError: dxcam 영역이 화면 밖
                 self.last_error = str(e); self.tray.showMessage(APP_NAME, str(e))
             if self.sess:
                 for n in self.sess.notes:
@@ -267,8 +274,8 @@ class App:
         # 한 틱에 전체 화면을 한 번만 캡처해서 잘라 쓴다.
         # (dxcam 은 새 프레임이 없으면 None 을 주는데, 영역별로 따로 grab 하면 앞의 grab 이 '새 프레임'을
         #  소비해 뒤의 상태창 grab 이 자주 None → 처리가 드문드문 → 시간 추정이 어긋남)
-        if self._sync_client():
-            return              # 게임 창이 움직였거나 크기가 바뀜 → 세션을 새 좌표로 다시 시작했음
+        if self._sync_client() or self._offscreen:
+            return              # 게임 창이 움직였거나 크기가 바뀜 → 세션을 새 좌표로 다시 시작 / 다른 모니터면 쉼
         full = self.cap.grab()
         if full is None:
             return
@@ -313,7 +320,11 @@ class App:
         cx, cy, cw, ch = client_rect(hwnd)
         if cw <= 0 or ch <= 0 or cx <= -30000:      # 최소화된 창 (-32000, -32000)
             return False
-        if (cx, cy) != self.client_xy or (cw, ch) != self.client_wh:
+        if not self.cap.contains(cx, cy, cw, ch):
+            if not self._offscreen:                   # 처음 벗어났을 때만 알림 (세션 정리 + 경고)
+                self.start_session()
+            return True
+        if (cx, cy) != self.client_xy or (cw, ch) != self.client_wh or self._offscreen:
             print(f"[{datetime.now():%H:%M:%S}] 게임 창 이동/크기 변경 → {cw}×{ch} @ ({cx},{cy}), 세션 재시작")
             self.start_session()
             return True

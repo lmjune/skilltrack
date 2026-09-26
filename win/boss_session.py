@@ -83,6 +83,10 @@ class BossSession:
                     pass
             if not r.strip and self.bosses.get(key, {}).get("strip"):
                 r.strip = True                      # 알려진 띠 보스인데 아직 아무것도 안 걸림 → 빈 띠
+            if self.boss_key is not None and key != self.boss_key:
+                # 다른 보스로 바뀜 (예: 공상 → 찬탈자). 이전 보스의 디버프가 '시간 남았는데 안 보임'으로 남지 않게 초기화
+                self.tracker.reset()
+                notes.append("다른 보스 → 디버프 추적 초기화")
             self.boss_key = key
         if r.present != self.was_present:
             notes.append("보스 바 보임" if r.present else "보스 바 사라짐")

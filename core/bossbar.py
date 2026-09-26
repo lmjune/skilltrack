@@ -237,8 +237,10 @@ def _gray(bgr):
 
 
 def _has_content(icon):
-    """내부가 거의 단색(검은 배경, 보라 바닥 등)이면 아이콘이 아니다. 색 편차가 아니라 밝기 편차로 본다."""
-    return float(_gray(icon).std()) > 12
+    """내부가 거의 단색(검은 배경, 보라 바닥 등)이면 아이콘이 아니다.
+    채널별 편차 중 최대로 본다: 물풍선처럼 최대 채널이 전부 255 인 밝은 아이콘은 '밝기'(최대 채널) 편차가 0 이라
+    빈칸으로 보고 띠 스캔이 거기서 멈췄다 → 뒤의 야옹·모모 등이 '빠짐' (실측 2026-09-26, 4K 100%)."""
+    return float(icon.reshape(-1, 3).astype(np.float32).std(axis=0).max()) > 12
 
 
 def _label_ok(region_bgr, x, ly, lib) -> bool:
@@ -283,7 +285,7 @@ def find_slots(region_bgr, anchor: Anchor, lib: GlyphLib | None = None) -> list[
     # 띠 시작 x 는 실측상 항상 이름 왼쪽 + STRIP_DX. ±2 만 허용하되, 칸 '수'가 아니라 칸당 '평균 점수'로 고른다
     # (어긋난 위치에선 테두리 점수가 낮고, 어두운 배경이 칸으로 더 잡혀 수는 오히려 많았다). 동점이면 기대 위치.
     expect = anchor.text_x + g.strip_dx
-    best_x, best_n, best_score = None, 0, 0.0
+    cands = []
     for dx in (0, -1, 1, -2, 2):
         x0 = expect + dx
         n, score = 0, 0.0
@@ -292,8 +294,15 @@ def find_slots(region_bgr, anchor: Anchor, lib: GlyphLib | None = None) -> list[
             if sc <= 0:
                 break
             n += 1; score += sc
-        mean = score / n if n else 0.0
-        if mean > best_score + 1e-6:
+        cands.append((x0, n, score / n if n else 0.0))
+    # 평균 점수로 고르되, 칸 수가 가장 많은 후보의 절반도 안 되는 후보는 제외.
+    # (밝은 바닥에서 1px 어긋난 위치가 앞 두 칸만 높은 점수로 잡혀, 14칸짜리 정답 대신 2칸이 뽑힌 일이 있음 — 2026-09-26)
+    max_n = max(n for _, n, _ in cands)
+    if max_n == 0:
+        return []
+    best_x, best_n, best_score = None, 0, 0.0
+    for x0, n, mean in cands:                      # 순서 = 기대 위치 먼저 → 동점이면 기대 위치
+        if n * 2 >= max_n and mean > best_score + 1e-6:
             best_x, best_n, best_score = x0, n, mean
     if best_n == 0:
         return []

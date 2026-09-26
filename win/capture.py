@@ -9,6 +9,13 @@ class Capture:
     def __init__(self):
         self.cam = dxcam.create(output_color="BGR")
 
+    def contains(self, x, y, w, h) -> bool:
+        """영역이 캡처하는 모니터(주 모니터) 안에 다 들어가는가. dxcam 은 밖이면 ValueError 로 죽는다."""
+        W, H = getattr(self.cam, "width", None), getattr(self.cam, "height", None)
+        if not W or not H:
+            return True
+        return x >= 0 and y >= 0 and x + w <= W and y + h <= H
+
     def grab(self, region=None) -> np.ndarray | None:
         """region 없으면 전체 화면. 변화 없으면 None을 돌려줄 수 있음."""
         if region is None:
