@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 import cv2
 import numpy as np
 
+from core import screen
 from core.strokes import any_stroke
 
 
@@ -51,10 +52,12 @@ def _edge(gray):
             + np.abs(cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)))
 
 
-def _vertical_segments_per_col(gray, pct=90, lo=8, hi=30):
+def _vertical_segments_per_col(gray, pct=90, lo=None, hi=None):
     """열마다 '아이콘 높이 정도(lo~hi px)로 끊어진 세로 엣지 선분'의 개수.
     아이콘 열은 행마다 질감이 있어 행 수만큼 나오고, 배경의 긴 세로선은 안 끊겨서 0~1,
     글자 열은 획이 짧고 행마다 위치가 달라 적게 나온다."""
+    lo = screen.px(8) if lo is None else lo          # 100% 기준 8~30px (아이콘 16 + 여유). UI 크기 배율 적용
+    hi = screen.px(30) if hi is None else hi
     sx = np.abs(cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3))
     b = sx > np.percentile(sx, pct)
     H, W = b.shape
@@ -69,8 +72,11 @@ def _vertical_segments_per_col(gray, pct=90, lo=8, hi=30):
     return counts
 
 
-def _icon_band_candidates(gray, min_w=8, max_w=24, dip_tol=4):
-    """세로 선분 수가 최댓값의 50% 이상인 열들의 연속 구간들 (왼쪽부터). 각 후보는 이후 검증을 거친다."""
+def _icon_band_candidates(gray, min_w=None, max_w=None, dip_tol=4):
+    """세로 선분 수가 최댓값의 50% 이상인 열들의 연속 구간들 (왼쪽부터). 각 후보는 이후 검증을 거친다.
+    폭 범위는 100% 기준 8~24px (아이콘 16 + 테두리 여유). UI 150% 에선 아이콘이 24px 이라 배율을 곱한다."""
+    min_w = screen.px(8) if min_w is None else min_w
+    max_w = screen.px(24) if max_w is None else max_w
     runs = _vertical_segments_per_col(gray)
     if runs.max() < 3:
         return []
@@ -173,9 +179,10 @@ def _fill_regular(tops, pitch, evidence, weak):
     return out
 
 
-def _refine_band(gray, band, min_w=8):
+def _refine_band(gray, band, min_w=None):
     """띠의 좌우 끝을 프레임 선(세로 엣지 열 피크)에 맞춘다. 선분 수 기준 띠는 몇 px 넘칠 수 있다."""
     L, R = band
+    min_w = screen.px(8) if min_w is None else min_w
     sx = np.abs(cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)).mean(axis=0)
     seg = sx[L:R]
     peaks = [i for i in range(1, len(seg) - 1) if seg[i] >= seg[i - 1] and seg[i] >= seg[i + 1]]

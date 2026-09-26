@@ -16,11 +16,13 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 
+from core import screen
 from core.rows import RowLayout
-from core.strokes import stroke_masks
+from core.strokes import stroke_masks, pink_mask
 
-GAP_MIN = 10        # 글자 덩어리를 나누는 빈 열 폭
-TIME_GAP_MIN = 20   # 시간은 이름에서 이만큼 이상 떨어져 있어야 함
+GAP_MIN = 10        # 글자 덩어리를 나누는 빈 열 폭 (100% 기준. UI 크기 배율 적용)
+TIME_GAP_MIN = 20   # 시간은 이름에서 이만큼 이상 떨어져 있어야 함 (100% 기준)
+TIME_W = (12, 80)   # 시간 텍스트 폭 범위 (100% 기준)
 
 
 @dataclass
@@ -36,6 +38,7 @@ class RowState:
     name_range: tuple | None = None   # 텍스트 rect 안에서 이름의 (x0, x1)
     time_range: tuple | None = None   # 시간의 (x0, x1)
     extended: bool | None = None      # 접미어 판정 결과 (세션이 채움). None 이면 폭 기준
+    ext_unknown: bool = False         # 이번 프레임은 연장 여부를 판단할 수 없음 (세션이 채움) → 추적기는 연장 상태를 유지
 
     @property
     def name_width(self):
@@ -85,6 +88,8 @@ def _row_strokes(text_bgr):
     n_white, n_gray = int(white.sum()), int(gray.sum())
     active = n_white >= max(8, n_gray * 0.5)
     name_mask = white | gray          # 활성/비활성 모두 같은 모양 (색만 다름)
+    if screen.current().fuzzy:
+        name_mask = name_mask | pink_mask(text_bgr)     # 분홍 접미어 "(투안의 노래)" (UI 150%)
     time_mask = white | gray | red
     return name_mask, time_mask, active, red
 
@@ -95,8 +100,9 @@ def _dense_runs(mask, runs, min_density=0.12):
     return [(a, b) for a, b in runs if mask[:, a:b + 1].sum() / (h * (b - a + 1)) >= min_density]
 
 
-def _runs(mask, gap=GAP_MIN):
+def _runs(mask, gap=None):
     """획 마스크의 열 분포를 덩어리로. [(x0, x1), ...]"""
+    gap = screen.px(GAP_MIN) if gap is None else gap
     lit = np.where(mask.any(axis=0))[0]
     if len(lit) == 0:
         return []
@@ -126,13 +132,18 @@ def parse_rows(img, layout: RowLayout) -> list[RowState]:
         time_rng = None
         if time_runs:
             ta, tb = time_runs[-1]
-            prev_end = time_runs[-2][1] if len(time_runs) >= 2 else (name_runs[0][0] if name_runs else 0)
+            # 덩어리가 시간 하나뿐이면 (이름 획을 못 잡은 프레임) 기준은 텍스트 시작. 전엔 그 덩어리 자신이 기준이라
+            # 시간이 '이름'으로 잘못 잡혀 접미어로 저장되는 일이 있었다 ("9초" 접미어)
+            prev_end = time_runs[-2][1] if len(time_runs) >= 2 else (
+                name_runs[0][0] if name_runs and name_runs[0][0] < ta else 0)
             aligned = layout.time_right is None or abs((x + tb) - layout.time_right) <= 3
-            if aligned and ta - prev_end >= TIME_GAP_MIN and 12 <= (tb - ta) <= 80:
+            if aligned and ta - prev_end >= screen.px(TIME_GAP_MIN) and screen.px(TIME_W[0]) <= (tb - ta) <= screen.px(TIME_W[1]):
                 time_rng = (ta, tb)
 
         # 이름: 첫 덩어리부터 시간 직전까지. 못 읽어도 행은 내보낸다
         # (밝은 배경의 반투명 글자는 세그멘테이션이 안 되지만, 행 번호로 추적하고 활성은 획 자리로 판정)
+        if name_runs and time_rng is not None and name_runs[0][0] >= time_rng[0]:
+            name_runs = []                         # 남은 덩어리가 시간뿐 → 이름은 못 읽음
         if name_runs:
             # 이름 = 첫 덩어리만. (띄어쓰기 ≤10px 는 이미 한 덩어리로 합쳐져 있고, 연장 접미 "(투안의 노래)" 도
             #  붙어서 같은 덩어리) 오른쪽에 따로 떠 있는 잠깐 글자(버프 켤 때 잔상 등)는 이름이 아니다

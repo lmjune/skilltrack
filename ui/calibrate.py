@@ -17,6 +17,7 @@ from PySide6.QtGui import QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import QApplication, QWidget
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+from core import screen
 from core.config import Config, skill_capture_rect
 from core.rows import detect_rows
 from core.status import parse_rows
@@ -93,7 +94,13 @@ class Calibrator(QWidget):
                 crop = self.cap.grab_sure((x, y, w, h))
                 L = detect_rows(crop)
                 if L is None:
-                    self.result = {"ok": False, "msg": "행을 못 찾음. 상태창이 잘 보이는 곳(어두운 배경)에서, 패널 폭에 맞게"}
+                    self.result = {"ok": False, "msg": "행을 못 찾음. 상태창이 잘 보이는 곳(어두운 배경)에서, 패널 폭에 맞게"
+                                                        f" (일반 설정의 UI 크기: {screen.current().label})"}
+                    return
+                if not screen.pitch_matches(L.pitch):
+                    seen = screen.guess_from_pitch(L.pitch)
+                    self.result = {"ok": False, "msg": f"행 간격이 {L.pitch}px — 게임 UI 크기{f'({seen})' if seen else ''}가 "
+                                                        f"일반 설정의 'UI 크기 변경'({screen.current().label})과 다릅니다. 설정을 맞추고 다시 하세요"}
                     return
                 # 저장 폭 = 검출된 글자 끝까지 (버프 하나 켜두면 시간 글자까지 포함됨). 드래그 폭은 탐색 범위일 뿐
                 left = max(0, L.icon_x - 6)

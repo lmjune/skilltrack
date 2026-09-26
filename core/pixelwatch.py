@@ -11,6 +11,7 @@
 from dataclasses import dataclass
 import numpy as np
 
+from core import screen
 from core.strokes import stroke_masks
 
 ON_RATIO = 0.85
@@ -48,7 +49,42 @@ def make_site(frame, text_rect, name_range) -> NameSite:
     a, b = name_range
     sub = frame[y:y + h, x + a:x + b + 1]
     white, gray, _ = stroke_masks(sub)
+    if screen.current().fuzzy:
+        cut = _suffix_start(sub, white | gray)
+        if cut is not None:                   # 연장 접미어가 붙은 채로 캘리브레이션 → 기본 이름까지만 자리로
+            sub, white, gray = sub[:, :cut], white[:, :cut], gray[:, :cut]
+    if screen.current().fuzzy and gray.any():
+        # 안티앨리어싱 글꼴: 회색 글자 가장자리는 배경과 섞인 중간 밝기라, 글자가 흰색으로 바뀌어도 250 이 안 된다
+        # → 활성 판정이 84% 에서 멈춰 '모름'. 완전히 덮인 픽셀(회색 최댓값 근처)만 자리로 쓴다.
+        #   실측: 185px → 38px, 회색 100%/흰색 100% 로 깔끔하게 갈림
+        mn = sub.min(axis=2).astype(np.int16)
+        gray = gray & (mn >= int(mn[gray].max()) - 10)
     return NameSite(int(x + a), int(y), white | gray)
+
+
+def _suffix_start(sub, strokes):
+    """'비바체(투안의 노래)' 처럼 분홍 접미어가 붙어 있으면 기본 이름이 끝나는 열(+1), 없으면 None.
+    접미어는 흰 '(' + 분홍 글자 + 흰 ')' → 첫 분홍 열 바로 앞의 좁은 흰 덩어리 '(' 까지 뺀다.
+    (전엔 접미어까지 자리로 저장돼, 접미어가 사라지면 그 자리가 배경이라 '판정 불가', 연장도 영영 못 봄)"""
+    from core.strokes import pink_mask
+    pk = np.nonzero(pink_mask(sub).any(axis=0))[0]
+    if len(pk) == 0:
+        return None
+    p0 = int(pk[0])
+    cols = np.nonzero(strokes[:, :p0].any(axis=0))[0]
+    if len(cols) == 0:
+        return None
+    runs, start, prev = [], cols[0], cols[0]
+    for c in cols[1:]:
+        if c - prev > 1:
+            runs.append((start, prev)); start = c
+        prev = c
+    runs.append((start, prev))
+    # '(' 는 대부분 분홍으로 섞여 그려진다 (실측). 흰 조각이 분홍에 딱 붙어(≤1px) 좁게 남아 있으면 그것도 '(' 로 보고 뺀다
+    last = runs[-1]
+    if len(runs) >= 2 and p0 - last[1] <= 2 and last[1] - last[0] + 1 <= screen.px(4):
+        return int(runs[-2][1]) + 1
+    return int(last[1]) + 1
 
 
 def read_site(frame, site: NameSite) -> Reading:

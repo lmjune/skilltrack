@@ -28,11 +28,15 @@ BOSS_RECT = (1500, 1850, 850, 250)      # 4K 기준. 바 1657~2178 × 1962~2011 
 
 def boss_rect(client_w, client_h):
     """바는 화면 가로 중앙·하단 고정 (4K 실측: 중심 x≈1918, 이름 y=2160−180). 다른 해상도는 같은 상대 위치로 가정 (미검증)."""
-    if (client_w, client_h) == (3840, 2160):
+    from core import screen
+    s = screen.scale()
+    if (client_w, client_h) == (3840, 2160) and s == 1.0:
         return BOSS_RECT
-    x = max(0, client_w // 2 - 425)
-    y = max(0, client_h - 310)
-    return (x, y, min(850, client_w - x), min(250, client_h - y))
+    # UI 크기에 비례 (150% 실측: 이름 y = 2160 − 270, 가로 중앙 그대로)
+    hw, top, w, h = int(425 * s), int(310 * s), int(850 * s), int(250 * s)
+    x = max(0, client_w // 2 - hw)
+    y = max(0, client_h - top)
+    return (x, y, min(w, client_w - x), min(h, client_h - y))
 ICON_DIR = ASSETS / "boss_icons"
 BOSSES_FILE = ICON_DIR / "bosses.json"    # {이름 해시: {"strip": true, "pct_sample": "…"}} 띠 패널이 한 번이라도 보인 보스
 
@@ -48,7 +52,9 @@ class BossResult:
 class BossSession:
     def __init__(self, watches: list[DebuffWatch] | None = None, saver: FrameSaver | None = None, learn=True, verbose=False):
         self.verbose = verbose                    # 바를 못 찾는 이유 진단 출력 (콘솔 감시용)
-        self.lib = GlyphLib.load(ASSETS / "glyphs.json")
+        from core import screen
+        sc = screen.current()
+        self.lib = GlyphLib.load(screen.boss_glyphs(), fuzzy=sc.fuzzy)    # 라벨 글자 (150% 는 부드러운 글꼴)
         self.icons = IconLib(ICON_DIR)
         self.tracker = BossTracker(watches or [])
         self.saver = saver or FrameSaver(DIAG / "boss" / "auto", reasons=("newicon", "nostrip", "nopanel", "dropped", "manual"))

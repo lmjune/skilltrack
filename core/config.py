@@ -33,6 +33,7 @@ class General:
     hide_when_inactive: bool = True        # 켜져 있어도 게임 창이 뒤로 가면 오버레이 숨김
     capturable: bool = False               # 오버레이를 스크린샷에 포함 (가이드 작성용). 평소엔 꺼둘 것
     boss_learn_icons: bool = False         # 보스 디버프: 모르는 아이콘을 assets/boss_icons 에 자동 등록 (디버그용. 배경 탓에 변형된 그림이 쌓이므로 평소엔 끔)
+    ui_variant: str = "100"                # 게임 안 UI 크기 옵션 (core/screen.py SCREENS). "100" = 변경 없음, "150_mabi", "150_nanum"
 
 
 @dataclass

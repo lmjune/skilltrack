@@ -9,6 +9,7 @@
 from dataclasses import dataclass, field
 import time
 
+from core import screen
 from core.status import RowState, fp_same
 
 
@@ -35,6 +36,7 @@ class Watch:
 EXT_MARGIN = 10
 EXPIRE_GRACE = 5    # 추정이 0 아래로 이만큼 내려가면 만료로 봄
 RESYNC_TOL = 5      # 읽은 값이 추정과 이만큼 이상 다르면 재동기화 (버프 갱신/연장)
+REFRESH_GAP = 10.0  # 이 안에 꺼졌다 켜지면 '갱신'으로 본다 (정화의 물결처럼 다시 쓰면 잠깐 꺼졌다 켜지는 버프)
 
 
 @dataclass
@@ -64,6 +66,9 @@ class _Track:
     off_since: float | None = None     # 확정 '꺼짐' 시작 시각 (유지 필수용)
     last_keep: float = -1e9
     jump_cand: int | None = None       # 값이 갑자기 늘어난 후보 (재동기화 전 2프레임 확인)
+    off_est: int | None = None         # 꺼지기 직전 남은 시간 추정 (잠깐 꺼졌다 켜진 '갱신' 감지용)
+    off_at: float | None = None
+    relit_at: float | None = None      # 꺼진 지 REFRESH_GAP 안에 다시 켜진 시각
     jump_n: int = 0
 
     def estimate(self, now):
@@ -77,9 +82,12 @@ class _Track:
 
 
 class Tracker:
-    def __init__(self, watches: list[Watch], debounce: int = 3, missing_limit: int = 15, keep_enabled: bool = True):
+    def __init__(self, watches: list[Watch], debounce: int = 3, missing_limit: int = 15, keep_enabled: bool = True,
+                 ext_off_debounce: int | None = None):
         self.tracks = [_Track(w) for w in watches]
         self.debounce = debounce
+        # 연장 끝은 더 오래 확인 (밝은 바닥·이펙트에서 접미어가 몇 프레임 안 잡히는 일이 흔하다). None = debounce 와 같음
+        self.ext_off_debounce = ext_off_debounce or debounce
         self.missing_limit = missing_limit
         self.keep_enabled = keep_enabled      # 반복 알림 마스터 토글. 유저가 전투 들어갈 때 켜고 나올 때 끈다
 
@@ -116,9 +124,12 @@ class Tracker:
                 if t.active:
                     t.fired_under.clear()
                     t.off_since = None
+                    if prev is False and t.off_at is not None and now - t.off_at <= REFRESH_GAP:
+                        t.relit_at = now
                 else:
                     t.off_since = now
                     t.last_keep = -1e9
+                    t.off_est, t.off_at = t.estimate(now), now
 
             # --- 유지 필수: 꺼진 채로 유예 시간이 지나면 주기적으로 ---
             if self.keep_enabled and t.watch.keep and t.active is False and t.off_since is not None:
@@ -127,15 +138,16 @@ class Tracker:
                     events.append(Event("keep", t.watch.label, at=now))
 
             # --- 연장 변형 감지 (이름 폭). 활성 행에서만 (비활성은 연장될 수 없고, 밝은 배경에선 이름 폭이 불안정) ---
-            if t.watch.base_width and row.name_width and t.active:
+            if t.watch.base_width and row.name_width and t.active and not getattr(row, "ext_unknown", False):
                 if row.name_width < t.watch.base_width - 4:
                     t.watch.base_width = row.name_width      # 연장된 채로 캘리브레이션했던 경우: 짧은 쪽이 기준
-                ext = row.extended if row.extended is not None else (row.name_width >= t.watch.base_width + EXT_MARGIN)
+                ext = row.extended if row.extended is not None else (row.name_width >= t.watch.base_width + screen.px(EXT_MARGIN))
                 if ext == t.ext_pending:
                     t.ext_n += 1
                 else:
                     t.ext_pending, t.ext_n = ext, 1
-                if t.ext_n >= self.debounce and t.ext_pending != t.extended:
+                need = self.debounce if t.ext_pending else self.ext_off_debounce
+                if t.ext_n >= need and t.ext_pending != t.extended:
                     prev, t.extended = t.extended, t.ext_pending
                     if prev is not None:
                         events += self._fire(t, Event("extended" if t.extended else "unextended", t.watch.label, at=now), now)
@@ -151,6 +163,11 @@ class Tracker:
                 t.last_sec = None; t.jump_cand = None
             elif raw is not None:
                 est = t.estimate(now)
+                if est is None and t.relit_at is not None:
+                    # 잠깐 꺼졌다 다시 켜진 뒤 첫 값: 꺼지기 전보다 늘었으면 '갱신' (꺼짐→켜짐을 거쳐 재동기화 경로를 못 탐)
+                    if now - t.relit_at <= 5 and (t.off_est is None or raw > t.off_est + RESYNC_TOL):
+                        events.append(Event("resync", t.watch.label, raw, at=now))
+                    t.relit_at = None
                 if est is None or raw <= est + RESYNC_TOL:
                     t.last_sec, t.last_at = raw, now    # 첫 관측이거나 정상(줄었음/오차 이내) → 조용히 갱신
                     t.jump_cand = None

@@ -2,9 +2,10 @@
 from PySide6.QtCore import Qt, QEvent
 from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QCheckBox, QSpinBox, QPushButton,
-                               QFrame, QFileDialog, QMessageBox)
+                               QFrame, QFileDialog, QMessageBox, QComboBox)
 
 from core.config import Config
+from core.screen import SCREENS, DEFAULT
 from core.paths import APP_NAME
 
 
@@ -70,6 +71,15 @@ class GeneralWindow(QWidget):
         s2 = QLabel("동작"); s2.setObjectName("section"); v.addWidget(s2)
         c2 = QFrame(); c2.setObjectName("card"); l2 = QVBoxLayout(c2); l2.setContentsMargins(16, 12, 16, 12); l2.setSpacing(8)
         self.title = QLineEdit(g.window_title); l2.addLayout(field("게임 창 제목", self.title, "작업 표시줄에 보이는 이름"))
+        self.ui_variant = QComboBox()
+        for key, sc in SCREENS.items():
+            self.ui_variant.addItem(sc.label, key)
+        i = self.ui_variant.findData(g.ui_variant if g.ui_variant in SCREENS else DEFAULT)
+        self.ui_variant.setCurrentIndex(max(0, i))
+        l2.addLayout(field("UI 크기 변경", self.ui_variant, "게임 옵션과 같게"))
+        uv_hint = QLabel("게임 옵션에서 UI 크기를 바꿨다면 여기서 같은 것을 고르세요 (150% 는 4K 만, 글씨체까지 맞게). "
+                         "바꾸면 [영역 설정]을 다시 해야 합니다. 보스 디버프: 150% 는 마비옛체만 지원 (나눔고딕은 게임이 남은 시간의 'M'(분)을 안 그려 분·초를 구분할 수 없음)")
+        uv_hint.setObjectName("muted"); uv_hint.setWordWrap(True); l2.addWidget(uv_hint)
         self.fps = QSpinBox(); self.fps.setRange(1, 30); self.fps.setValue(g.fps); self.fps.setFixedWidth(80)
         l2.addLayout(field("초당 확인 횟수", self.fps, "5면 충분. 높이면 CPU 사용 증가"))
         self.hide_inactive = QCheckBox("게임 창이 뒤로 가면 오버레이 숨김"); self.hide_inactive.setChecked(g.hide_when_inactive); l2.addWidget(self.hide_inactive)
@@ -92,6 +102,7 @@ class GeneralWindow(QWidget):
         g.window_title, g.fps = self.title.text().strip() or g.window_title, self.fps.value()
         g.hide_when_inactive, g.diag_save, g.capturable = self.hide_inactive.isChecked(), self.diag.isChecked(), self.cap.isChecked()
         g.boss_learn_icons = self.learn.isChecked()
+        g.ui_variant = self.ui_variant.currentData() or DEFAULT
         self.cfg.overlays.skill_smooth = self.smooth.isChecked()
         self.cfg.save()
         if self.on_saved:

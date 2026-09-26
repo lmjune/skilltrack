@@ -51,6 +51,7 @@ class RowCard(QFrame):
         super().__init__()
         self.row, self.pid = row, pid
         self.var_checks = []
+        self.var_orig = {}           # key → (연장, 메모) 처음 값. 저장 때 어느 카드에서 바꿨는지 가린다
         self.setObjectName("card")
         v = QVBoxLayout(self); v.setContentsMargins(16, 12, 16, 12); v.setSpacing(8)
 
@@ -91,9 +92,11 @@ class RowCard(QFrame):
         d.addLayout(hbox(self.alert_on, muted("보통은 필요 없음")))
 
         # 이름 접미어 변형: 자동 저장된 것들 중 '연장으로 취급' 선택
-        vs = variants.load(pid, None) if pid else []
+        # 접미어는 프로필 공통 (같은 글자면 어느 버프에 붙든 같은 설정). 화면에는 이 행에 붙어 본 것만 보인다
+        vs = [v for v in (variants.load(pid, None) if pid else []) if v.get("seen_rows") is None or row in v["seen_rows"]]
         if vs:
-            d.addWidget(muted("이름 뒤에 붙는 글자 (자동 수집, 모든 버프 공통). 시간이 늘어나는 연장이면 체크 → 연장 임계값 사용"))
+            d.addWidget(muted("이 버프 이름 뒤에 붙었던 글자 (자동 수집). 시간이 늘어나는 연장이면 체크 → 연장 임계값 사용. "
+                              "같은 글자는 모든 버프에 공통 적용"))
             for vinfo in vs:
                 png = variants._folder(pid) / f"{vinfo['key']}.png"
                 pic = QLabel(); pic.setObjectName("thumb")
@@ -105,6 +108,7 @@ class RowCard(QFrame):
                 cb = QCheckBox("연장으로 취급"); cb.setObjectName("small"); cb.setChecked(vinfo["extends"])
                 lb = QLineEdit(vinfo["label"]); lb.setPlaceholderText("메모 (예: 투안의 노래)"); lb.setFixedWidth(160)
                 self.var_checks.append((vinfo["key"], cb, lb))
+                self.var_orig[vinfo["key"]] = (vinfo["extends"], vinfo["label"])
                 d.addLayout(hbox(pic, cb, lb, spacing=12))
         v.addWidget(self.detail)
 
@@ -179,9 +183,17 @@ class WatchesWindow(QWidget):
 
     def _save(self):
         prof = self.prof
+        # 같은 접미어가 여러 카드에 보일 수 있다 (공통 설정). 카드마다 덮어쓰면 마지막 카드 값이 이긴다
+        # → 바뀐 카드의 값을 쓴다 (체크를 한 카드에서만 바꿔도 적용되게). 전엔 다른 카드의 '미체크'가 덮어써 체크가 안 먹었다
+        merged = {}
         for c in self.cards:
             for key, cb, lb in c.var_checks:
-                variants.set_flags(self.cfg.current, c.row, key, label=lb.text().strip(), extends=cb.isChecked())
+                orig = c.var_orig.get(key)
+                cur = (cb.isChecked(), lb.text().strip())
+                if key not in merged or cur != orig:
+                    merged[key] = cur
+        for key, (ext, label) in merged.items():
+            variants.set_flags(self.cfg.current, None, key, label=label, extends=ext)
         prof.watches = {c.row: c.watch_cfg() for c in self.cards if c.enabled.isChecked()}
         prof.mirror_rows = [m for c in self.cards if (m := c.mirror_cfg())]
         self.cfg.general.sound_file = self.sound.text().strip()

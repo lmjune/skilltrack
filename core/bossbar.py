@@ -20,6 +20,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from core import screen
 from core.digits import GlyphLib, segment
 
 # ---- 고정 치수 ----
@@ -58,6 +59,57 @@ ICON_MIN_CORR_DIM = 0.85    # 어둡게/반투명하게 사라지는 프레임(�
 FADE_MAX = 200
 BLINK_GAINS = tuple(np.concatenate([np.arange(0.15, 1.0, 0.05), np.arange(1.0, 2.6, 0.1)]).round(2))
 # 만료 직전 깜빡임은 어둡게(~25%)도, 밝게(~145%, 255 에서 잘림)도 그려진다 → 템플릿을 k 배 후 clip 한 것과 비교
+
+
+# ---- 화면 변형별 치수 ----
+# 위 상수는 UI 100% (4K). UI 150% 마비옛체는 실측값 (연속 저장 55장, 글라스 기브넨):
+#   '%' 17×17 (전 프레임 동일), 이름 첫 행 +1. 띠 칸: 주황 바깥 테두리 24, 그 안 어두운 테두리 상자 20 (바깥+2), 그림 18×18 (바깥+3)
+#   = 같은 그림을 1.5배. 피치 27. 테두리 상자 위 = 이름 첫 행 −67, 라벨 글자 −39..−29 (부드러운 글꼴), 패널 위 테두리 −21.
+# 나눔고딕 150% 는 게임 버그로 라벨의 'M' 이 안 그려져 "4"(분)와 "4"(초)를 가를 수 없음 → 보스 디버프 미지원.
+PCT_150_MABI = ['01111100000000000', '11101110000110000', '11000110000110000', '10000110001110000', '11000110011100000',
+                '11000110011000000', '11111110111000000', '01111101110000000', '00000001100011000', '00000011101111110',
+                '00000011001100111', '00000111011000011', '00001110011000011', '00001100011000011', '00011100001100011',
+                '00001000001111110', '00000000000111100']
+
+
+@dataclass(frozen=True)
+class Geom:
+    pct_masks: tuple            # ((style, bool 마스크), ...)
+    pct_dy: int
+    name_w: int
+    icon: int                   # 어두운 테두리 상자 한 변
+    inner: int                  # 그림 한 변 (캡처 크기)
+    inner_off: int              # 상자 왼쪽 위 → 그림 왼쪽 위
+    pitch: int
+    strip_dy: int
+    strip_dx: int
+    label_dy: int
+    label_h: int
+    label_dx: int
+    label_w: int
+    panel_dy: int
+    name_rows: int              # name_key 에 쓰는 이름 글자 행 수
+    name_cols: int
+    gap: int                    # 테두리 없는 아이콘 판정 때 왼쪽 간격 폭
+    icon_min_corr: float        # 12×12 로 줄여 비교할 때 같은 아이콘 기준
+    icon_margin: float          # 2위와 이만큼은 차이 (0 = 안 봄)
+    scaled: bool                # 그림을 12×12 로 줄여 라이브러리와 비교하는가
+
+
+GEOMS = {
+    "100": Geom(tuple(PCT_MASKS), PCT_DY, NAME_W, ICON, INNER, 1, PITCH, STRIP_DY, STRIP_DX,
+                LABEL_DY, LABEL_H, LABEL_DX, LABEL_W, -14, 17, 260, 4,
+                ICON_MIN_CORR, 0.0, False),
+    "150_mabi": Geom((("bold", np.array([[c == "1" for c in r] for r in PCT_150_MABI])),), 1, 750, 20, 18, 1, 27, -67, -5,
+                     -41, 15, 0, 26, -21, 26, 390, 6,
+                     # 12×12 로 줄이면 게임의 확대와 달라 같은 아이콘도 0.78~0.94, 2위(다른 아이콘)는 최대 0.61, 차이 최소 0.27
+                     0.75, 0.25, True),
+}
+
+
+def geom() -> "Geom | None":
+    """현재 화면 변형의 보스 바 치수. 지원 안 하는 변형(나눔고딕 150%)이면 None → 보스 디버프 끔."""
+    return GEOMS.get(screen.current().key)
 
 
 @dataclass
@@ -108,6 +160,9 @@ def find_bar(region_bgr, search=None) -> Anchor | None:
 
 def find_bar_diag(region_bgr, search=None):
     """(anchor|None, 최소 차이 픽셀 수, (x, y)) — 못 찾을 때 왜 못 찾는지 보려고."""
+    g = geom()
+    if g is None:
+        return None, 10 ** 6, (0, 0)
     w = _white(region_bgr).astype(np.uint8)
     ox = oy = 0
     if search is not None:
@@ -115,7 +170,7 @@ def find_bar_diag(region_bgr, search=None):
         w = w[y:y + hh, x:x + ww]; ox, oy = x, y
     w = np.ascontiguousarray(w)
     best = None
-    for style, mask in PCT_MASKS:
+    for style, mask in g.pct_masks:
         th, tw = mask.shape
         if w.shape[0] < th or w.shape[1] < tw:
             continue
@@ -132,16 +187,17 @@ def find_bar_diag(region_bgr, search=None):
     if diff > PCT_MAX_DIFF:
         return None, diff, (x0 + ox, y0 + oy)
     pct_x1 = x0 + tw - 1 + ox
-    text_y = y0 - PCT_DY + oy
-    return Anchor(text_x=pct_x1 - NAME_W, text_y=text_y, pct_x1=pct_x1, style=style), diff, (x0 + ox, y0 + oy)
+    text_y = y0 - g.pct_dy + oy
+    return Anchor(text_x=pct_x1 - g.name_w, text_y=text_y, pct_x1=pct_x1, style=style), diff, (x0 + ox, y0 + oy)
 
 
 def name_key(region_bgr, anchor: Anchor) -> str:
     """보스 이름 글자(흰 마스크)의 해시. 같은 보스는 프레임이 달라도 같은 값 (렌더링이 픽셀 단위로 같다).
     이름은 왼쪽 정렬, 퍼센트는 오른쪽 정렬이라 왼쪽 260px 만 본다 (퍼센트 숫자는 계속 바뀌므로 제외)."""
     import hashlib
+    g = geom() or GEOMS["100"]
     x0 = max(0, anchor.text_x - 8)
-    m = _white(region_bgr[anchor.text_y:anchor.text_y + 17, x0:x0 + 260])
+    m = _white(region_bgr[anchor.text_y:anchor.text_y + g.name_rows, x0:x0 + g.name_cols])
     return hashlib.sha1(np.packbits(m).tobytes()).hexdigest()[:12]
 
 
@@ -151,15 +207,25 @@ PANEL_DY = -14              # 띠 있는 보스: 바 위 테두리(어두운 1�
 
 def has_strip_panel(region_bgr, anchor: Anchor) -> bool:
     """실측 23프레임: 띠 보스는 이름 −14 행이 전부 어둡고(1.00), 띠 없는 보스(제바흐)는 0.00."""
-    y = anchor.text_y + PANEL_DY
-    if y < 0:
+    g = geom() or GEOMS["100"]
+    y = anchor.text_y + g.panel_dy
+    if y < 2:
         return False
-    row = region_bgr[y, max(0, anchor.text_x - 10):anchor.pct_x1 + 10]
-    return row.size > 0 and float((row.max(axis=1) < 40).mean()) >= 0.9
+    x0, x1 = max(0, anchor.text_x - 10), anchor.pct_x1 + 10
+    row = region_bgr[y, x0:x1]
+    if row.size == 0:
+        return False
+    if not g.scaled:
+        return float((row.max(axis=1) < 40).mean()) >= 0.9
+    # UI 150%: 위 테두리가 반투명이라 바닥이 밝으면 48 까지 밝아진다 (실측 19~48). 절대값 대신 '위 패널·아래 바보다 확실히 어두운가'
+    med = lambda yy: float(np.median(region_bgr[yy, x0:x1].max(axis=1)))
+    m, above, below = med(y), med(y - 2), med(y + 1)
+    return m < 90 and m < 0.75 * min(above, below)
 
 def _ring_dark_ratio(reg, x, y):
-    box = reg[y:y + ICON, x:x + ICON]
-    if box.shape[0] != ICON or box.shape[1] != ICON:
+    n = (geom() or GEOMS["100"]).icon
+    box = reg[y:y + n, x:x + n]
+    if box.shape[0] != n or box.shape[1] != n:
         return 0.0
     m = box.max(axis=2) < FRAME_DARK
     ring = np.concatenate([m[0, :], m[-1, :], m[1:-1, 0], m[1:-1, -1]])
@@ -177,7 +243,8 @@ def _has_content(icon):
 
 def _label_ok(region_bgr, x, ly, lib) -> bool:
     """아래에 읽히는 라벨(숫자/M)이 있는가. 흰 픽셀 수만 세면 흰 얼음 바닥에서 오검출 → 글자 매칭까지 요구."""
-    lab = region_bgr[ly:ly + LABEL_H, x + LABEL_DX:x + LABEL_DX + LABEL_W]
+    g = geom() or GEOMS["100"]
+    lab = region_bgr[ly:ly + g.label_h, x + g.label_dx:x + g.label_dx + g.label_w]
     if not lab.size or int(_white(lab).sum()) < 5:
         return False
     glyphs = segment(lab)
@@ -189,37 +256,39 @@ def _slot_score(region_bgr, x, y, ly, lib=None) -> float:
     - 라벨(흰 글자)이 아래에 있으면 확실 (라벨은 아이콘 아래에만 그려진다. 아주 어둡게 깜빡이는 프레임도 라벨은 남는다)
     - 테두리가 어둡고 내부에 밝기 편차가 있으면 아이콘
     - 테두리 없는 아이콘(파란 X 검): 14×14 전체가 밝고 편차가 큼. 단 왼쪽 4px 간격은 패널(어두움)이어야 한다 (밝은 바닥 오검출 방지)"""
-    if x + ICON > region_bgr.shape[1] or x < 0:
+    g = geom() or GEOMS["100"]
+    if x + g.icon > region_bgr.shape[1] or x < 0:
         return 0.0
-    box = region_bgr[y:y + ICON, x:x + ICON]
-    inner = box[1:1 + INNER, 1:1 + INNER]
+    box = region_bgr[y:y + g.icon, x:x + g.icon]
+    inner = box[g.inner_off:g.inner_off + g.inner, g.inner_off:g.inner_off + g.inner]
     ring = _ring_dark_ratio(region_bgr, x, y)
     if _label_ok(region_bgr, x, ly, lib):
         return 2.0 + ring
     if ring >= FRAME_RATIO and _has_content(inner) and int(inner.max()) >= 130:
         return 1.0 + ring
-    g = _gray(box)
-    if float(g.std()) > 40 and int(g.max()) >= 200:
-        gap = _gray(region_bgr[y:y + ICON, max(0, x - 4):x])
+    gb = _gray(box)
+    if float(gb.std()) > 40 and int(gb.max()) >= 200:
+        gap = _gray(region_bgr[y:y + g.icon, max(0, x - g.gap):x])
         if gap.size and float(gap.mean()) < 130:
             return 1.0
     return 0.0
 
 
 def find_slots(region_bgr, anchor: Anchor, lib: GlyphLib | None = None) -> list[Slot]:
-    y = anchor.text_y + STRIP_DY
-    ly = anchor.text_y + LABEL_DY
-    if y < 0 or y + ICON > region_bgr.shape[0]:
+    g = geom() or GEOMS["100"]
+    y = anchor.text_y + g.strip_dy
+    ly = anchor.text_y + g.label_dy
+    if y < 0 or y + g.icon > region_bgr.shape[0]:
         return []
     # 띠 시작 x 는 실측상 항상 이름 왼쪽 + STRIP_DX. ±2 만 허용하되, 칸 '수'가 아니라 칸당 '평균 점수'로 고른다
     # (어긋난 위치에선 테두리 점수가 낮고, 어두운 배경이 칸으로 더 잡혀 수는 오히려 많았다). 동점이면 기대 위치.
-    expect = anchor.text_x + STRIP_DX
+    expect = anchor.text_x + g.strip_dx
     best_x, best_n, best_score = None, 0, 0.0
     for dx in (0, -1, 1, -2, 2):
         x0 = expect + dx
         n, score = 0, 0.0
         for i in range(MAX_SLOTS):
-            sc = _slot_score(region_bgr, x0 + i * PITCH, y, ly, lib)
+            sc = _slot_score(region_bgr, x0 + i * g.pitch, y, ly, lib)
             if sc <= 0:
                 break
             n += 1; score += sc
@@ -230,9 +299,12 @@ def find_slots(region_bgr, anchor: Anchor, lib: GlyphLib | None = None) -> list[
         return []
     out = []
     for i in range(best_n):
-        x = best_x + i * PITCH
-        icon = region_bgr[y + 1:y + 1 + INNER, x + 1:x + 1 + INNER].copy()
-        lab = region_bgr[ly:ly + LABEL_H, x + LABEL_DX:x + LABEL_DX + LABEL_W].copy()
+        x = best_x + i * g.pitch
+        o = g.inner_off
+        icon = region_bgr[y + o:y + o + g.inner, x + o:x + o + g.inner].copy()
+        if g.scaled:          # UI 150%: 같은 그림의 1.5배 → 라이브러리(12×12)와 비교·표시하려고 줄인다
+            icon = cv2.resize(icon, (INNER, INNER), interpolation=cv2.INTER_AREA)
+        lab = region_bgr[ly:ly + g.label_h, x + g.label_dx:x + g.label_dx + g.label_w].copy()
         out.append(Slot(i, x, y, icon, lab))
     return out
 
@@ -313,6 +385,11 @@ class IconLib:
                 second = c
         if best is None:
             return None, best_c
+        g = geom() or GEOMS["100"]
+        if g.scaled:          # UI 150%: 줄인 그림이라 기준을 낮추되 2위와의 차이로 확인
+            if best_c >= g.icon_min_corr and best_c - second >= g.icon_margin:
+                return best, best_c
+            return None, best_c
         if best_c >= (ICON_MIN_CORR_STACK if self.is_stack(best) else ICON_MIN_CORR):
             return best, best_c
         if int(icon.max()) < FADE_MAX and best_c >= ICON_MIN_CORR_DIM and best_c - second >= 0.05:
@@ -353,11 +430,17 @@ class IconLib:
 
 # ---------------------------------------------------------------- 한 번에
 def read_bar(region_bgr, lib: GlyphLib, icons: IconLib | None = None, search=None) -> BarRead:
+    if geom() is None:
+        return BarRead(None)                  # 지원 안 하는 화면 변형
     a = find_bar(region_bgr, search)
     if a is None:
         return BarRead(None)
     strip = has_strip_panel(region_bgr, a)
-    slots = find_slots(region_bgr, a, lib) if strip else []
+    g = geom()
+    # UI 150%: 반투명 패널이라 이펙트·밝은 바닥에서 패널 판정이 가끔 빠진다 → 칸은 항상 찾아 보고, 칸이 있으면 띠 있음
+    slots = find_slots(region_bgr, a, lib) if (strip or g.scaled) else []
+    if slots:
+        strip = True
     for s in slots:
         s.label, s.seconds = read_label(s.label_img, lib)
         if icons is not None:

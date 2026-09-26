@@ -176,6 +176,10 @@ if __name__ == "__main__":
             if a.startswith("--rect"):
                 v = a.split("=", 1)[1] if "=" in a else args[args.index(a) + 1]
                 rect = tuple(int(t) for t in v.split(","))
+        for a in args:
+            if a.startswith("--screen"):                 # --screen=150_mabi : UI 크기 변형 (core/screen.py)
+                from core import screen
+                screen.set_screen(a.split("=", 1)[1] if "=" in a else args[args.index(a) + 1])
         main([int(a) for a in args if a.isdigit()], "--recalib" in args, "--debug" in args,
              boss="--boss" in args, boss_only="--bossonly" in args, rect=rect)
     except KeyboardInterrupt:

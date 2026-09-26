@@ -15,6 +15,7 @@ from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor, QAction
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QMessageBox
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+from core import screen
 from core.config import Config, CONFIG_FILE, skill_capture_rect
 from win.session import Session, FrameSaver, event_text
 from core.paths import ASSETS, DIAG, VERSION, APP_NAME
@@ -130,6 +131,7 @@ class App:
         self.mismatch, self.mismatch_since, self.mismatch_warned = False, None, False
         self.cfg = Config.load()
         g, prof = self.cfg.general, self.cfg.profile()
+        screen.set_screen(g.ui_variant)             # UI 크기 변형: 치수 배율·시간 글자 세트
         if not prof:
             self.last_error = "캐릭터가 없습니다"; self._refresh_home(); return
         hwnd = find_window(g.window_title)
@@ -506,7 +508,12 @@ class App:
         self._show(w, "general")
 
     def _general_saved(self):
+        old = screen.current().key
         self.cfg = Config.load()
+        if self.cfg.general.ui_variant != old:        # UI 크기가 바뀌면 검출 규칙·글자 세트가 달라짐 → 세션 다시
+            self.notify("UI 크기 변경 → 다시 시작합니다. 상태창이 안 맞으면 [영역 설정]을 다시 하세요", "info", 4.0)
+            self.start_session()
+            return
         self._bind_hotkeys()
         set_capturable(self.cfg.general.capturable)
         if self.skills:
@@ -525,6 +532,7 @@ class App:
         hwnd = find_window(self.cfg.general.window_title)
         if not hwnd:
             self.tray.showMessage(APP_NAME, "게임 창을 못 찾음"); return
+        screen.set_screen(self.cfg.general.ui_variant)
         self._was_active = self.cfg.general.active
         if self._was_active:
             self.toggle_active(False)                   # 드래그 중엔 오버레이·감시 끔

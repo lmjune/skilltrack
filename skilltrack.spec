@@ -12,6 +12,7 @@ a = Analysis(
         ("assets/boss_icons", "assets/boss_icons"),
         ("assets/sounds", "assets/sounds"),
         ("assets/fonts", "assets/fonts"),
+        ("assets/screens", "assets/screens"),      # UI 크기 변형별 글자 세트 (core/screen.py)
     ],
     hiddenimports=collect_submodules("dxcam") + ["win32gui", "win32con", "win32api"],
     hookspath=[],
