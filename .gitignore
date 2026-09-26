@@ -1,19 +1,28 @@
 .venv/
 __pycache__/
 *.pyc
-tests/out/
+*.log
+*.log.1
+
+# 빌드
 dist/
 build/
-assets/unknown/
-tests/fixtures/auto/
-tests/fixtures/*.png
+
+# 사용자 데이터 (실행하면 생김)
 profiles/*.json
 profiles/layouts/
 profiles/variants/
-assets/unknown/*.png
-assets/unknown/*.pngtests/fixtures/boss/auto/
-assets/boss_icons/bosses.json
-tests/fixtures/boss/auto
+profiles/glyphs/
 diag/
-*.log
-*.log.1
+
+# 모르는 글자·아이콘 수집
+assets/unknown/
+assets/boss_icons/bosses.json
+
+# 테스트 이미지 (용량 큼 → 저장소 밖에 백업. 정답·코드만 커밋)
+tests/out/
+tests/fixtures/*.png
+tests/fixtures/auto/
+tests/fixtures/boss/auto/
+tests/fixtures/variants/
+tests/fixtures/**/*.webp
