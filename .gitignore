@@ -13,6 +13,7 @@ profiles/*.json
 profiles/layouts/
 profiles/variants/
 profiles/glyphs/
+profiles/voice/
 diag/
 
 # 모르는 글자·아이콘 수집

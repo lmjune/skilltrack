@@ -23,7 +23,12 @@ class General:
     window_title: str = "마비노기"
     fps: int = 5
     sound: bool = False                    # 알림 소리. 기본 무음
-    sound_file: str = ""
+    sound_file: str = ""                   # 효과음 대신 쓸 wav (비우면 심각도별 기본음)
+    voice: bool = True                     # 소리가 켜져 있으면 감시 항목을 음성으로 ("마나실드 꺼짐"). 끄면 효과음만
+    voice_volume: int = 90                 # 0~100
+    effect_volume: int = 70                # 0~100
+    voice_rate: int = 1                    # 말 빠르기 −10~10 (SAPI)
+    voice_name: str = ""                   # 비우면 한국어 목소리 자동 (Microsoft Heami)
     diag_save: bool = False
     active: bool = False                   # 마스터 스위치. 켜면 감시·알림·오버레이 전부 동작, 끄면 트레이만 (던전 들어갈 때 켜고 나와서 끔)
     hotkeys_enabled: bool = False          # 단축키 사용 (키 상태 폴링. 게임에도 키가 들어가니 안 쓰는 키로)
@@ -47,6 +52,8 @@ class WatchCfg:
     keep: bool = False
     keep_delay: float = 10.0
     keep_interval: float = 30.0
+    sound: str = "voice"             # voice | effect | none  (core/speech.py)
+    voice_text: str = ""             # 부를 이름. 비우면 표시 이름 ("마나실드 꺼짐", "햄버프 30초")
 
 
 @dataclass

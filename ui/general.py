@@ -2,7 +2,7 @@
 from PySide6.QtCore import Qt, QEvent
 from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QCheckBox, QSpinBox, QPushButton,
-                               QFrame, QFileDialog, QMessageBox, QComboBox)
+                               QFrame, QFileDialog, QMessageBox, QComboBox, QSlider, QScrollArea)
 
 from core.config import Config
 from core.screen import SCREENS, DEFAULT
@@ -38,6 +38,10 @@ class HotkeyEdit(QLineEdit):
         self.setText("+".join(mods + [name]))
 
 
+def _wrap(layout):
+    w = QWidget(); layout.setContentsMargins(0, 0, 0, 0); w.setLayout(layout); return w
+
+
 def field(label, w, hint=""):
     row = QHBoxLayout(); row.setSpacing(12)
     l = QLabel(label); l.setFixedWidth(150); row.addWidget(l); row.addWidget(w, 1)
@@ -47,16 +51,19 @@ def field(label, w, hint=""):
 
 
 class GeneralWindow(QWidget):
-    def __init__(self, cfg: Config, on_saved=None):
+    def __init__(self, cfg: Config, on_saved=None, player=None):
         super().__init__()
-        self.cfg, self.on_saved = cfg, on_saved
-        self.setWindowTitle(APP_NAME); self.resize(640, 520)
+        self.cfg, self.on_saved, self.player = cfg, on_saved, player
+        self._saved = False
+        self.setWindowTitle(APP_NAME); self.resize(680, 760)
         g = cfg.general
         root = QVBoxLayout(self); root.setContentsMargins(0, 0, 0, 0); root.setSpacing(0)
         head = QWidget(); hv = QVBoxLayout(head); hv.setContentsMargins(28, 24, 28, 12)
         t = QLabel("일반 설정"); t.setObjectName("title"); hv.addWidget(t); root.addWidget(head)
 
-        body = QWidget(); v = QVBoxLayout(body); v.setContentsMargins(28, 8, 28, 16); v.setSpacing(10); root.addWidget(body, 1)
+        body = QWidget(); v = QVBoxLayout(body); v.setContentsMargins(28, 8, 28, 16); v.setSpacing(10)
+        scroll = QScrollArea(); scroll.setWidgetResizable(True); scroll.setFrameShape(QFrame.NoFrame); scroll.setWidget(body)
+        root.addWidget(scroll, 1)
 
         s1 = QLabel("단축키"); s1.setObjectName("section"); v.addWidget(s1)
         c1 = QFrame(); c1.setObjectName("card"); l1 = QVBoxLayout(c1); l1.setContentsMargins(16, 12, 16, 12); l1.setSpacing(8)
@@ -88,6 +95,46 @@ class GeneralWindow(QWidget):
         self.cap = QCheckBox("오버레이를 스크린샷에 포함 (가이드 작성용 — 평소엔 끄세요)"); self.cap.setChecked(g.capturable); l2.addWidget(self.cap)
         self.learn = QCheckBox("보스 디버프: 모르는 아이콘 자동 등록 (디버그용 — 평소엔 끄세요)"); self.learn.setChecked(g.boss_learn_icons); l2.addWidget(self.learn)
         v.addWidget(c2)
+
+        s3 = QLabel("소리"); s3.setObjectName("section"); v.addWidget(s3)
+        c3 = QFrame(); c3.setObjectName("card"); l3 = QVBoxLayout(c3); l3.setContentsMargins(16, 12, 16, 12); l3.setSpacing(8)
+        self.sound_on = QCheckBox("알림 소리"); self.sound_on.setChecked(g.sound); l3.addWidget(self.sound_on)
+        self.voice_on = QCheckBox("음성으로 알림 (\"마나실드 꺼짐\", \"햄버프 30초\", 보스 버스트 \"붕파 적용!\")")
+        self.voice_on.setChecked(g.voice); l3.addWidget(self.voice_on)
+        vh = QLabel("윈도우 내장 한국어 음성으로 말합니다. 버프마다 음성/효과음/없음과 부를 이름은 [감시 항목]에서. "
+                    "여러 개가 한꺼번에 꺼지면 \"버프 N개 꺼짐\" 한 마디, 보스 버스트는 다른 소리를 끊고 바로 나옵니다")
+        vh.setObjectName("muted"); vh.setWordWrap(True); l3.addWidget(vh)
+
+        self.voice_name = QComboBox()
+        self.voice_name.addItem("자동 (한국어 목소리)", "")
+        try:
+            from win.voice import Tts
+            for name, ko in Tts.list_voices():
+                self.voice_name.addItem(name + ("" if ko else "  (한국어 아님)"), name)
+        except Exception:
+            pass
+        self.voice_name.setCurrentIndex(max(0, self.voice_name.findData(g.voice_name)))
+        l3.addLayout(field("목소리", self.voice_name))
+
+        def slider(val):
+            sl = QSlider(Qt.Horizontal); sl.setRange(0, 100); sl.setValue(int(val)); sl.setSingleStep(5); sl.setPageStep(10)
+            lab = QLabel(f"{int(val)}%"); lab.setFixedWidth(44)
+            sl.valueChanged.connect(lambda x: lab.setText(f"{x}%"))
+            row = QHBoxLayout(); row.addWidget(sl, 1); row.addWidget(lab)
+            return sl, row
+        self.voice_vol, r1 = slider(g.voice_volume); l3.addLayout(field("음성 볼륨", _wrap(r1)))
+        self.effect_vol, r2 = slider(g.effect_volume); l3.addLayout(field("효과음 볼륨", _wrap(r2)))
+        self.voice_rate = QSpinBox(); self.voice_rate.setRange(-5, 8); self.voice_rate.setValue(int(g.voice_rate)); self.voice_rate.setFixedWidth(80)
+        l3.addLayout(field("말 빠르기", self.voice_rate, "0 = 보통, 높을수록 빠름"))
+        self.sound_file = QLineEdit(g.sound_file); self.sound_file.setPlaceholderText("효과음 wav — 비우면 기본음 (심각도별)")
+        pick = QPushButton("찾기"); pick.setObjectName("ghost"); pick.clicked.connect(self._pick_sound)
+        fr = QHBoxLayout(); fr.addWidget(self.sound_file, 1); fr.addWidget(pick)
+        l3.addLayout(field("효과음 파일", _wrap(fr)))
+        t1 = QPushButton("음성 들어보기"); t1.clicked.connect(lambda: self._test("voice"))
+        t2 = QPushButton("버스트 들어보기"); t2.clicked.connect(lambda: self._test("burst"))
+        t3 = QPushButton("효과음 들어보기"); t3.clicked.connect(lambda: self._test("effect"))
+        tr = QHBoxLayout(); tr.addWidget(t1); tr.addWidget(t2); tr.addWidget(t3); tr.addStretch(); l3.addLayout(tr)
+        v.addWidget(c3)
         v.addStretch()
 
         foot = QWidget(); foot.setObjectName("footer"); fl = QHBoxLayout(foot); fl.setContentsMargins(28, 12, 28, 12); fl.addStretch()
@@ -95,8 +142,47 @@ class GeneralWindow(QWidget):
         save = QPushButton("저장"); save.setObjectName("primary"); save.clicked.connect(self._save); fl.addWidget(save)
         root.addWidget(foot)
 
+    def _pick_sound(self):
+        f, _ = QFileDialog.getOpenFileName(self, "효과음", "", "WAV (*.wav)")
+        if f:
+            self.sound_file.setText(f)
+
+    def _apply_player(self, from_widgets=True):
+        if not self.player:
+            return
+        if from_widgets:
+            self.player.set_options(self.voice_on.isChecked(), self.voice_vol.value(), self.effect_vol.value(),
+                                    self.voice_rate.value(), self.voice_name.currentData() or "", self.sound_file.text().strip())
+        else:
+            g = self.cfg.general
+            self.player.set_options(g.voice, g.voice_volume, g.effect_volume, g.voice_rate, g.voice_name, g.sound_file)
+
+    def _test(self, what):
+        """저장 전 값으로 바로 들어보기 (닫을 때 저장 안 했으면 원래 값으로 되돌림)."""
+        if not self.player:
+            QMessageBox.information(self, APP_NAME, "소리 재생기를 시작하지 못했습니다 (로그 확인)"); return
+        import time
+        from core.speech import Utterance, P_BURST, P_OFF
+        self._apply_player(True)
+        if what == "burst":
+            self.player.say(Utterance("voice", "붕파 적용!", "danger", P_BURST, time.time(), key=f"test{time.time()}"))
+        elif what == "voice":
+            self.player.say(Utterance("voice", "마나실드 꺼짐", "danger", P_OFF, time.time(), key=f"test{time.time()}"))
+        else:
+            self.player.say(Utterance("effect", level="danger", prio=P_OFF, at=time.time(), key=f"test{time.time()}"))
+
+    def closeEvent(self, e):
+        if not self._saved:
+            self._apply_player(False)
+        super().closeEvent(e)
+
     def _save(self):
         g = self.cfg.general
+        g.sound, g.voice = self.sound_on.isChecked(), self.voice_on.isChecked()
+        g.voice_volume, g.effect_volume = self.voice_vol.value(), self.effect_vol.value()
+        g.voice_rate, g.voice_name = self.voice_rate.value(), self.voice_name.currentData() or ""
+        g.sound_file = self.sound_file.text().strip()
+        self._saved = True
         g.hotkeys_enabled = self.hk_on.isChecked()
         g.hotkey_toggle, g.hotkey_settings, g.hotkey_edit = self.hk_toggle.text(), self.hk_settings.text(), self.hk_edit.text()
         g.window_title, g.fps = self.title.text().strip() or g.window_title, self.fps.value()

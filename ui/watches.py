@@ -91,6 +91,19 @@ class RowCard(QFrame):
         self.alert_on = QCheckBox("켜지는 순간도 알림"); self.alert_on.setChecked(w.alert_on); self.alert_on.setObjectName("small")
         d.addLayout(hbox(self.alert_on, muted("보통은 필요 없음")))
 
+        # 소리: 음성 / 효과음 / 없음 + 부를 이름
+        from PySide6.QtWidgets import QComboBox
+        self.sound_mode = QComboBox(); self.sound_mode.setFixedWidth(96)
+        for key, text in (("voice", "음성"), ("effect", "효과음"), ("none", "소리 없음")):
+            self.sound_mode.addItem(text, key)
+        self.sound_mode.setCurrentIndex(max(0, self.sound_mode.findData(w.sound)))
+        self.voice_text = QLineEdit(w.voice_text); self.voice_text.setFixedWidth(160)
+        self.voice_text.setPlaceholderText("부를 이름 (비우면 위 이름)")
+        self.sound_mode.currentIndexChanged.connect(lambda _: self.voice_text.setEnabled(self.sound_mode.currentData() == "voice"))
+        self.voice_text.setEnabled(w.sound == "voice")
+        d.addLayout(hbox(QLabel("소리"), self.sound_mode, self.voice_text,
+                         muted("예: \"실드\" → \"실드 꺼짐\", \"실드 30초\"")))
+
         # 이름 접미어 변형: 자동 저장된 것들 중 '연장으로 취급' 선택
         # 접미어는 프로필 공통 (같은 글자면 어느 버프에 붙든 같은 설정). 화면에는 이 행에 붙어 본 것만 보인다
         vs = [v for v in (variants.load(pid, None) if pid else []) if v.get("seen_rows") is None or row in v["seen_rows"]]
@@ -125,7 +138,8 @@ class RowCard(QFrame):
                         alert_off=self.alert_off.isChecked(), alert_on=self.alert_on.isChecked(),
                         alert_under=ints(self.under.text()) if self.under_on.isChecked() else [],
                         alert_under_extended=ints(self.under_ext.text()) if self.under_on.isChecked() else [],
-                        keep=self.keep.isChecked(), keep_delay=self.keep_delay.value(), keep_interval=self.keep_interval.value())
+                        keep=self.keep.isChecked(), keep_delay=self.keep_delay.value(), keep_interval=self.keep_interval.value(),
+                        sound=self.sound_mode.currentData() or "voice", voice_text=self.voice_text.text().strip())
 
     def mirror_cfg(self) -> MirrorRow | None:
         if not (self.enabled.isChecked() and self.mirror.isChecked()):
@@ -164,9 +178,7 @@ class WatchesWindow(QWidget):
         sec = QLabel("공통"); sec.setObjectName("section"); v.addSpacing(8); v.addWidget(sec)
         common = QFrame(); common.setObjectName("card"); cl = QVBoxLayout(common); cl.setContentsMargins(16, 12, 16, 12)
         self.sound_on = QCheckBox("알림 소리"); self.sound_on.setChecked(cfg.general.sound)
-        self.sound = QLineEdit(cfg.general.sound_file); self.sound.setPlaceholderText("wav 파일 — 비우면 기본 알림음 (심각도별)")
-        pick = QPushButton("찾기"); pick.clicked.connect(self._pick_sound)
-        cl.addLayout(hbox(self.sound_on, self.sound, pick, stretch_end=False))
+        cl.addLayout(hbox(self.sound_on, muted("목소리·볼륨·효과음 파일은 [일반 설정 → 소리]")))
 
         v.addWidget(common); v.addStretch()
 
@@ -175,11 +187,6 @@ class WatchesWindow(QWidget):
         cancel = QPushButton("취소"); cancel.clicked.connect(self.close); fl.addWidget(cancel)
         save = QPushButton("저장"); save.setObjectName("primary"); save.clicked.connect(self._save); fl.addWidget(save)
         root.addWidget(foot)
-
-    def _pick_sound(self):
-        f, _ = QFileDialog.getOpenFileName(self, "알림 소리", "", "WAV (*.wav)")
-        if f:
-            self.sound.setText(f)
 
     def _save(self):
         prof = self.prof
@@ -196,7 +203,6 @@ class WatchesWindow(QWidget):
             variants.set_flags(self.cfg.current, None, key, label=label, extends=ext)
         prof.watches = {c.row: c.watch_cfg() for c in self.cards if c.enabled.isChecked()}
         prof.mirror_rows = [m for c in self.cards if (m := c.mirror_cfg())]
-        self.cfg.general.sound_file = self.sound.text().strip()
         self.cfg.general.sound = self.sound_on.isChecked()
         self.cfg.save()
         self.close()

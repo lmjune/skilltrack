@@ -16,6 +16,7 @@ from PySide6.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QMessageBox
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from core import screen
+from core.speech import Planner, SoundCfg, Utterance, P_BURST, phrase, keep_phrase, spoken_name
 from core.config import Config, CONFIG_FILE, skill_capture_rect
 from win.session import Session, FrameSaver, event_text
 from core.paths import ASSETS, DIAG, VERSION, APP_NAME
@@ -80,6 +81,15 @@ class App:
         set_capturable(self.cfg.general.capturable)
 
         self.timer = QTimer(); self.timer.timeout.connect(self.tick)
+        self.planner = Planner()                  # 소리 규칙 (묶기·반복 합치기)
+        self.sound_cfg = {}                       # 감시 라벨 → SoundCfg
+        self.player = None
+        try:
+            from win.voice import Player
+            g0 = self.cfg.general
+            self.player = Player(g0.voice, g0.voice_volume, g0.effect_volume, g0.voice_rate, g0.voice_name, g0.sound_file)
+        except Exception as e:
+            print(f"소리 재생기 시작 실패: {e}")
         self.start_session()
         self.open_home()                          # 실행하면 홈이 뜨고, 닫으면 트레이로
 
@@ -168,6 +178,7 @@ class App:
         else:
             self.last_error = f"'{prof.name}' 상태창 영역이 없습니다 → [영역 설정] (스킬 표시·보스 디버프는 동작)"
         self._start_boss(prof)
+        self._setup_sound(prof)
         self._rebuild_overlays()
         if not (self.sess or self.boss or self.skills):
             self._refresh_home(); return            # 돌릴 게 하나도 없음
@@ -298,14 +309,54 @@ class App:
             self.mirror.update_from(frame, r)
         for n in r.notes:
             print(f"[{datetime.now():%H:%M:%S}] {n}")
-        g = self.cfg.general
+        sound_events = []
         for ev in r.events:
             if ev.kind not in LEVEL:
                 continue
             level, dur = LEVEL[ev.kind]
             text = f"{ev.label} {event_text(ev)}"
             print(f"[{datetime.now():%H:%M:%S}] {text}")
-            self.overlay.push(text, level, dur, sound=g.sound, sound_file=g.sound_file or None)
+            self.overlay.push(text, level, dur, sound=False)
+            sound_events.append((ev.kind, ev.label, ev.value))
+        self._speak(sound_events)
+
+    # ------------------------------------------------------------ 소리
+    def _setup_sound(self, prof):
+        """감시 항목별 소리 설정 표 + 자주 쓸 문구 미리 합성."""
+        self.planner = Planner()
+        self.sound_cfg = {}
+        warm = []
+        for row, w in (prof.watches.items() if prof else []):
+            if not w.enabled:
+                continue
+            label = w.label or f"행{row}"
+            sc = SoundCfg(w.sound if w.sound in ("voice", "effect", "none") else "voice", w.voice_text)
+            self.sound_cfg[label] = sc
+            if sc.mode != "voice":
+                continue
+            name = spoken_name(label, sc)
+            if w.alert_off:
+                warm.append(phrase("off", name))
+            for v in list(w.alert_under) + list(w.alert_under_extended):
+                warm.append(phrase("under", name, v))
+            if w.keep:
+                warm.append(keep_phrase([name]))
+        warm += [f"버프 {n}개 꺼짐" for n in range(3, 9)]
+        for name, bw in (prof.boss_watches.items() if prof else []):
+            if bw.burst:
+                warm.insert(0, bw.burst_text or f"{name} 적용!")          # 버스트는 맨 먼저
+        if self.player and self.cfg.general.sound and self.cfg.general.voice:
+            self.player.prewarm(warm)
+
+    def _speak(self, events):
+        """상태창 이벤트 → 소리 (매 틱 호출: 반복 알림 합치기 때문에 이벤트가 없어도)."""
+        g = self.cfg.general
+        if not (g.sound and self.player):
+            return
+        for u in self.planner.plan(events, self.sound_cfg.get, time.time()):
+            if u.kind == "voice" and not g.voice:
+                u.kind = "effect"
+            self.player.say(u)
 
     def _sync_client(self):
         """1초마다 게임 창 클라이언트 좌표를 다시 읽는다. 움직이거나 크기가 바뀌면 세션 재시작
@@ -345,7 +396,9 @@ class App:
             text = f"{ev.label} {debuff_event_text(ev)}".strip() if ev.kind != "burst" else debuff_event_text(ev)
             print(f"[{datetime.now():%H:%M:%S}] [보스] {text}")
             if ev.kind == "burst":
-                self.overlay.push(text, "danger", 5.0, sound=g.sound, sound_file=g.sound_file or None)
+                self.overlay.push(text, "danger", 5.0, sound=False)
+                if g.sound and self.player:          # 버스트: 새치기 (재생 중인 것을 끊고 바로)
+                    self.player.say(Utterance("voice" if g.voice else "effect", text, "danger", P_BURST, time.time(), key=f"burst:{text}"))
             elif ev.kind in ("start", "end"):
                 self.overlay.push(text, "info", 2.5, sound=False)
         if self.boss_ov:
@@ -515,12 +568,15 @@ class App:
 
     def open_general(self):
         from ui.general import GeneralWindow
-        w = GeneralWindow(self.cfg, on_saved=self._general_saved)
+        w = GeneralWindow(self.cfg, on_saved=self._general_saved, player=self.player)
         self._show(w, "general")
 
     def _general_saved(self):
         old = screen.current().key
         self.cfg = Config.load()
+        g1 = self.cfg.general
+        if self.player:
+            self.player.set_options(g1.voice, g1.voice_volume, g1.effect_volume, g1.voice_rate, g1.voice_name, g1.sound_file)
         if self.cfg.general.ui_variant != old:        # UI 크기가 바뀌면 검출 규칙·글자 세트가 달라짐 → 세션 다시
             self.notify("UI 크기 변경 → 다시 시작합니다. 상태창이 안 맞으면 [영역 설정]을 다시 하세요", "info", 4.0)
             self.start_session()
@@ -577,6 +633,8 @@ class App:
         w.show(); w.raise_(); w.activateWindow()
 
     def quit(self):
+        if self.player:
+            self.player.stop()
         self.timer.stop(); self.hk.unbind_all(); self.tray.hide(); self.qt.quit()
 
     def exec(self):
