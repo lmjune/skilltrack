@@ -3,6 +3,7 @@
   - 이름 (공용, icons.json)           ← 같은 이름이면 한 항목으로 묶임 (스택 변형 등)
   - 감시 (이 캐릭터, profile.boss_watches)  빠지면 오버레이에 표시
   - 재표시 임계 "60,40,20"             남은 초가 이 이하로 내려갈 때 다시 표시
+  - 소리 (빠짐·재표시)                  음성 = "모모 빠짐", "모모 20초" (기본 소리 없음)
   - 버스트 + 문구                      걸리는 순간 알림 토스트
 저장하면 icons.json + config.json.
 """
@@ -11,7 +12,7 @@ import numpy as np
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QCheckBox, QLineEdit, QPushButton,
-                               QScrollArea, QFrame)
+                               QScrollArea, QFrame, QComboBox)
 
 from core.bossbar import IconLib
 from core.config import Config, BossWatchCfg
@@ -51,20 +52,54 @@ class IconRow(QFrame):
         self.name.setFixedWidth(150); h.addWidget(self.name)
         self.stack = QCheckBox("스택형"); self.stack.setObjectName("small"); self.stack.setToolTip("숫자만 바뀌는 변형(1~5 스택)을 같은 아이콘으로 봄")
         self.stack.setChecked(any("stack" in icons.meta.get(k, {}).get("tags", []) for k in ids)); h.addWidget(self.stack)
-        self.on = QCheckBox("감시"); self.on.setChecked(cfg is not None and cfg.enabled)
-        self.on.setToolTip("빠지면 목록에 표시. 버스트 알림만 원하면 끄고 버스트만 켜세요"); h.addWidget(self.on)
-        h.addWidget(QLabel("재표시(초)"))
-        self.th = QLineEdit(",".join(str(t) for t in (cfg.thresholds if cfg else [60, 40, 20]))); self.th.setFixedWidth(90)
-        self.th.setToolTip("남은 초가 이 이하로 내려가면 목록에 다시 표시. 비우면 빠졌을 때만 표시 (지속 10초짜리 버스트는 비우세요)"); h.addWidget(self.th)
-        self.burst = QCheckBox("버스트"); self.burst.setChecked(bool(cfg and cfg.burst)); h.addWidget(self.burst)
-        self.burst_text = QLineEdit(cfg.burst_text if cfg else ""); self.burst_text.setPlaceholderText("알림 문구 (비우면 '이름 적용!')")
-        self.burst_text.setFixedWidth(180); h.addWidget(self.burst_text)
+        # 두 묶음: [빠짐 알림] 감시·재표시·소리  |  [버스트] 체크·문구·소리. 소리 칸이 둘이라 각각 이름표를 붙인다
+        def combo(cur):
+            c = QComboBox(); c.setFixedWidth(96)
+            for key, text in (("voice", "음성"), ("effect", "효과음"), ("none", "소리 없음")):
+                c.addItem(text, key)
+            c.setCurrentIndex(max(0, c.findData(cur)))
+            return c
+
+        def muted(t):
+            l = QLabel(t); l.setObjectName("muted"); return l
+
+        miss = QFrame(); mh = QHBoxLayout(miss); mh.setContentsMargins(0, 0, 0, 0); mh.setSpacing(6)
+        self.on = QCheckBox("감시 (빠지면 표시)"); self.on.setChecked(cfg is not None and cfg.enabled)
+        self.on.setToolTip("빠지면 목록에 표시. 버스트 알림만 원하면 끄고 버스트만 켜세요"); mh.addWidget(self.on)
+        mh.addWidget(muted("재표시(초)"))
+        self.th = QLineEdit(",".join(str(t) for t in (cfg.thresholds if cfg else [60, 40, 20]))); self.th.setFixedWidth(80)
+        self.th.setToolTip("남은 초가 이 이하로 내려가면 목록에 다시 표시. 비우면 빠졌을 때만 표시 (지속 10초짜리 버스트는 비우세요)"); mh.addWidget(self.th)
+        mh.addWidget(muted("빠짐 소리"))
+        self.sound = combo(cfg.sound if cfg else "none")
+        self.sound.setToolTip("빠지거나 재표시 시간에 닿을 때의 소리. 음성 = '이름 빠짐', '이름 20초' (빠져 있으면 20초마다 다시).\n"
+                              "버스트·상태창 알림 다음 순서")
+        mh.addWidget(self.sound)
+        h.addWidget(miss)
+
+        sep = QFrame(); sep.setFrameShape(QFrame.VLine); sep.setObjectName("muted"); h.addWidget(sep)
+
+        bur = QFrame(); bh = QHBoxLayout(bur); bh.setContentsMargins(0, 0, 0, 0); bh.setSpacing(6)
+        self.burst = QCheckBox("버스트 (걸리는 순간)"); self.burst.setChecked(bool(cfg and cfg.burst)); bh.addWidget(self.burst)
+        self.burst_text = QLineEdit(cfg.burst_text if cfg else ""); self.burst_text.setPlaceholderText("문구 (비우면 '이름 적용!')")
+        self.burst_text.setFixedWidth(160); bh.addWidget(self.burst_text)
+        bh.addWidget(muted("버스트 소리"))
+        self.burst_sound = combo(cfg.burst_sound if cfg else "none")
+        self.burst_sound.setToolTip("버스트가 걸리는 순간의 소리. 음성 = 문구를 말함 (다른 소리를 끊고 바로)")
+        bh.addWidget(self.burst_sound)
+        h.addWidget(bur)
         h.addStretch()
         if unnamed:
             hint = QLabel("이름을 붙이면 감시할 수 있음"); hint.setObjectName("muted"); h.addWidget(hint)
-        for w in (self.on, self.th, self.burst, self.burst_text):
-            w.setEnabled(bool(self.name.text().strip()))
-        self.name.textChanged.connect(lambda t: [w.setEnabled(bool(t.strip())) for w in (self.on, self.th, self.burst, self.burst_text)])
+
+        def refresh(*_):
+            named = bool(self.name.text().strip())
+            self.on.setEnabled(named); self.burst.setEnabled(named)
+            for w in (self.th, self.sound):
+                w.setEnabled(named and self.on.isChecked())            # 감시를 켜야 빠짐 소리가 의미 있음
+            for w in (self.burst_text, self.burst_sound):
+                w.setEnabled(named and self.burst.isChecked())         # 버스트를 켜야 버스트 소리가 의미 있음
+        self.name.textChanged.connect(refresh); self.on.toggled.connect(refresh); self.burst.toggled.connect(refresh)
+        refresh()
 
     def apply(self, watches: dict):
         name = self.name.text().strip()
@@ -73,14 +108,16 @@ class IconRow(QFrame):
             self.icons.meta[k] = {"name": name, "tags": tags}
         if name and (self.on.isChecked() or self.burst.isChecked()):
             watches[name] = BossWatchCfg(enabled=self.on.isChecked(), thresholds=parse_thresholds(self.th.text()),
-                                         burst=self.burst.isChecked(), burst_text=self.burst_text.text().strip())
+                                         burst=self.burst.isChecked(), burst_text=self.burst_text.text().strip(),
+                                         burst_sound=self.burst_sound.currentData() or "none",
+                                         sound=self.sound.currentData() or "none")
 
 
 class BossWindow(QWidget):
     def __init__(self, cfg: Config, prof, icons: IconLib, on_saved=None):
         super().__init__()
         self.cfg, self.prof, self.icons, self.on_saved = cfg, prof, icons, on_saved
-        self.setWindowTitle(APP_NAME); self.resize(1080, 720)
+        self.setWindowTitle(APP_NAME); self.resize(1320, 720)
         root = QVBoxLayout(self); root.setContentsMargins(0, 0, 0, 0); root.setSpacing(0)
         head = QWidget(); hv = QVBoxLayout(head); hv.setContentsMargins(28, 24, 28, 12); hv.setSpacing(4)
         t = QLabel(f"보스 디버프 — {prof.name}"); t.setObjectName("title"); hv.addWidget(t)

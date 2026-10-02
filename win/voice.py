@@ -3,8 +3,8 @@
 
 - 문구 wav 는 profiles/voice/ 에 캐시 (목소리·빠르기·문구별). 처음 한 번만 합성, 이후 즉시 재생.
 - 볼륨은 재생용 사본에 곱해서 굽는다 (winsound 는 볼륨 조절이 없음). 음성/효과음 볼륨 따로.
-- 재생은 별도 스레드 하나: 대기열(core/speech.SoundQueue)에서 꺼내 하나씩, 끝날 때까지 기다림.
-  버스트(P_BURST)가 들어오면 기다리던 걸 끊고 바로 재생 (winsound 비동기 재생은 새 재생이 이전 것을 멈춘다).
+- 재생은 별도 스레드 하나. 새 소리가 재생 중인 것보다 같거나 높은 우선순위면 바로 끊고 새것을 재생
+  (winsound 비동기 재생은 새 재생이 이전 것을 멈춘다). 낮으면 잠깐 기다렸다가, 너무 늦으면 버린다.
 - 음성을 못 쓰면 (SAPI 없음·한국어 목소리 없음) 효과음으로 대신.
 """
 import hashlib
@@ -16,7 +16,7 @@ from pathlib import Path
 import numpy as np
 
 from core.paths import ASSETS, PROFILES
-from core.speech import P_BURST, SoundQueue, Utterance
+from core.speech import SoundQueue, Utterance
 
 VOICE_DIR = PROFILES / "voice"
 SOUND_DIR = ASSETS / "sounds"
@@ -199,26 +199,44 @@ class Player:
         except Exception:
             pass
 
+    def _stop(self):
+        try:
+            import winsound
+            winsound.PlaySound(None, winsound.SND_PURGE)
+        except Exception:
+            pass
+
     def _loop(self):
         try:
             import pythoncom
             pythoncom.CoInitialize()
         except Exception:
             pass
+        cur = None                  # 재생 중인 것 (Utterance)
+        started, length = 0.0, 0.0
         while True:
             with self.lock:
                 while self.running:
                     now = time.time()
-                    urgent = self.q.has_urgent()
-                    if (now >= self.busy_until or urgent) and len(self.q):
+                    if cur is not None and now >= self.busy_until:
+                        cur = None
+                    best = self.q.best_prio(now)
+                    # 재생 중이 아니거나, 새것이 같거나 높은 우선순위면 바로 (끊고) 재생
+                    if best is not None and (cur is None or best <= cur.prio):
                         break
-                    if self.prewarm_list and now >= self.busy_until:
+                    if self.prewarm_list and cur is None:
                         break
-                    wait = max(0.02, self.busy_until - now) if self.busy_until > now else 0.5
-                    self.lock.wait(timeout=min(wait, 0.5))
+                    wait = self.busy_until - now if cur is not None else 0.5
+                    self.lock.wait(timeout=max(0.02, min(wait, 0.5)))
                 if not self.running:
+                    self._stop()
                     return
-                u = self.q.pop(time.time()) if len(self.q) else None
+                now = time.time()
+                u = self.q.pop(now) if self.q.best_prio(now) is not None else None
+                # 더 높은 것에 끊긴 낮은 것: 절반도 못 했으면 다시 대기 (끝나고 이어서. 너무 늦으면 대기열이 버림)
+                if (u is not None and cur is not None and u.prio < cur.prio and cur.prio not in self.q.slots
+                        and now - started < length / 2):
+                    self.q.push(cur)
                 warm = self.prewarm_list.pop(0) if (u is None and self.prewarm_list) else None
             if warm is not None:
                 if self.voice:
@@ -230,7 +248,8 @@ class Player:
                 path = self._resolve(u)
                 if path is None:
                     continue
-                self._play(path)
-                self.busy_until = time.time() + wav_duration(path) + GAP
+                self._play(path)                       # 재생 중인 것이 있으면 이게 끊는다
+                cur, started, length = u, time.time(), wav_duration(path)
+                self.busy_until = started + length + GAP
             except Exception as e:
                 print(f"소리 재생 실패: {e}")

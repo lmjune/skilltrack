@@ -41,6 +41,7 @@ class DebuffEvent:
     label: str
     value: int | None = None
     at: float = 0.0
+    initial: bool = False      # 전투 시작 후 첫 판정 (원래부터 없던 것 → 소리로는 말하지 않음)
 
 
 @dataclass
@@ -123,6 +124,7 @@ class BossTracker:
                 st.pending_n += 1
             need = DEBOUNCE_ON if on else (DEBOUNCE_OFF_LONG if (st.remaining(now) or 0) > SUSPECT_SECS else DEBOUNCE_OFF)
             if st.pending_n >= need and on != st.present:
+                first = st.present is None
                 st.present = on
                 st.fired.clear()
                 w = st.watch
@@ -132,7 +134,7 @@ class BossTracker:
                         ev.append(DebuffEvent("burst", w.burst_text or f"{w.label} 적용!", at=now))
                 else:
                     st.seconds, st.exact = None, False
-                    ev.append(DebuffEvent("missing", w.label, at=now))
+                    ev.append(DebuffEvent("missing", w.label, at=now, initial=first))
                     if w.burst:
                         ev.append(DebuffEvent("burst_off", w.label, at=now))
             # 시간

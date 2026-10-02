@@ -81,6 +81,9 @@ class _Track:
         return max(0, int(round(est)))
 
 
+KEEP_ALIGN = 3.0     # 반복 알림이 하나 나갈 때, 이 안에 차례가 올 다른 반복 알림도 같이 (글씨·소리를 한 번에 맞춤)
+
+
 class Tracker:
     def __init__(self, watches: list[Watch], debounce: int = 3, missing_limit: int = 15, keep_enabled: bool = True,
                  ext_off_debounce: int | None = None):
@@ -185,6 +188,15 @@ class Tracker:
                     if sec < thr and thr not in t.fired_under:
                         t.fired_under.add(thr)
                         events += self._fire(t, Event("under", t.watch.label, thr, at=now), now)
+        # 반복 알림 맞추기: 하나라도 나갔으면 곧 차례인 다른 것도 지금 같이 → 이후엔 같은 박자로 돈다
+        if any(e.kind == "keep" for e in events):
+            fired = {e.label for e in events if e.kind == "keep"}
+            for t in self.tracks:
+                if (self.keep_enabled and t.watch.keep and t.active is False and t.off_since is not None
+                        and t.watch.label not in fired and now - t.off_since >= t.watch.keep_delay - KEEP_ALIGN
+                        and now - t.last_keep >= t.watch.keep_interval - KEEP_ALIGN):
+                    t.last_keep = now
+                    events.append(Event("keep", t.watch.label, at=now))
         return events
 
     def _fire(self, t: _Track, ev: Event, now: float) -> list[Event]:

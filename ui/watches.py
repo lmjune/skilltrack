@@ -139,7 +139,7 @@ class RowCard(QFrame):
                         alert_under=ints(self.under.text()) if self.under_on.isChecked() else [],
                         alert_under_extended=ints(self.under_ext.text()) if self.under_on.isChecked() else [],
                         keep=self.keep.isChecked(), keep_delay=self.keep_delay.value(), keep_interval=self.keep_interval.value(),
-                        sound=self.sound_mode.currentData() or "voice", voice_text=self.voice_text.text().strip())
+                        sound=self.sound_mode.currentData() or "none", voice_text=self.voice_text.text().strip())
 
     def mirror_cfg(self) -> MirrorRow | None:
         if not (self.enabled.isChecked() and self.mirror.isChecked()):
@@ -177,8 +177,9 @@ class WatchesWindow(QWidget):
 
         sec = QLabel("공통"); sec.setObjectName("section"); v.addSpacing(8); v.addWidget(sec)
         common = QFrame(); common.setObjectName("card"); cl = QVBoxLayout(common); cl.setContentsMargins(16, 12, 16, 12)
-        self.sound_on = QCheckBox("알림 소리"); self.sound_on.setChecked(cfg.general.sound)
-        cl.addLayout(hbox(self.sound_on, muted("목소리·볼륨·효과음 파일은 [일반 설정 → 소리]")))
+        # 전체 소리 켜기/끄기는 여기 두지 않는다 (상태창 전용 스위치로 오해 → 끄면 버스트·보스 소리까지 꺼졌다)
+        cl.addWidget(muted("소리는 위 카드마다 [소리]에서 (음성·효과음·소리 없음). "
+                           "전체 소리 켜기/끄기·목소리·볼륨은 [일반 설정 → 소리] (상태창·버스트·보스 디버프 공통)"))
 
         v.addWidget(common); v.addStretch()
 
@@ -203,7 +204,6 @@ class WatchesWindow(QWidget):
             variants.set_flags(self.cfg.current, None, key, label=label, extends=ext)
         prof.watches = {c.row: c.watch_cfg() for c in self.cards if c.enabled.isChecked()}
         prof.mirror_rows = [m for c in self.cards if (m := c.mirror_cfg())]
-        self.cfg.general.sound = self.sound_on.isChecked()
         self.cfg.save()
         self.close()
         if self.on_saved:

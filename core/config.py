@@ -24,7 +24,6 @@ class General:
     fps: int = 5
     sound: bool = False                    # 알림 소리. 기본 무음
     sound_file: str = ""                   # 효과음 대신 쓸 wav (비우면 심각도별 기본음)
-    voice: bool = True                     # 소리가 켜져 있으면 감시 항목을 음성으로 ("마나실드 꺼짐"). 끄면 효과음만
     voice_volume: int = 90                 # 0~100
     effect_volume: int = 70                # 0~100
     voice_rate: int = 1                    # 말 빠르기 −10~10 (SAPI)
@@ -39,6 +38,7 @@ class General:
     capturable: bool = False               # 오버레이를 스크린샷에 포함 (가이드 작성용). 평소엔 꺼둘 것
     boss_learn_icons: bool = False         # 보스 디버프: 모르는 아이콘을 assets/boss_icons 에 자동 등록 (디버그용. 배경 탓에 변형된 그림이 쌓이므로 평소엔 끔)
     ui_variant: str = "100"                # 게임 안 UI 크기 옵션 (core/screen.py SCREENS). "100" = 변경 없음, "150_mabi", "150_nanum"
+    sound_defaults: int = 1          # 1 = 감시 항목 소리 기본값을 '소리 없음'으로 바꾼 뒤의 설정 (한 번만 옮김)
 
 
 @dataclass
@@ -52,7 +52,7 @@ class WatchCfg:
     keep: bool = False
     keep_delay: float = 10.0
     keep_interval: float = 30.0
-    sound: str = "voice"             # voice | effect | none  (core/speech.py)
+    sound: str = "none"              # voice | effect | none  (core/speech.py). 기본 소리 없음 (원하는 것만 켬)
     voice_text: str = ""             # 부를 이름. 비우면 표시 이름 ("마나실드 꺼짐", "햄버프 30초")
 
 
@@ -64,6 +64,8 @@ class BossWatchCfg:
     thresholds: list = field(default_factory=lambda: [60, 40, 20])   # 남은 초가 이 이하로 내려갈 때 다시 표시 (초 단위 라벨일 때만)
     burst: bool = False                                              # 걸리는 순간 알림 (버스트 스킬)
     burst_text: str = ""                                             # 비우면 "{이름} 적용!"
+    burst_sound: str = "none"                                        # 버스트 소리: none(기본, 화면 알림만) | voice(문구를 말함) | effect
+    sound: str = "none"                                              # 빠짐·재표시 소리: none(기본) | voice("모모 빠짐", "모모 20초") | effect
 
 
 @dataclass
@@ -209,6 +211,12 @@ class Config:
                                              "mirror_rows": d.get("overlays", {}).get("mirror_rows", [])})
         if c.current not in c.profiles:
             c.current = next(iter(c.profiles), "")
+        # 한 번만: 예전 기본값(음성)으로 저장된 상태창 감시 항목 소리를 '소리 없음'으로 (원하는 것만 다시 켬)
+        if "sound_defaults" not in d.get("general", {}):
+            for prof in c.profiles.values():
+                for w in prof.watches.values():
+                    w.sound = "none"
+            c.general.sound_defaults = 1
         return c
 
 

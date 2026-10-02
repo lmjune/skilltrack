@@ -98,11 +98,12 @@ class GeneralWindow(QWidget):
 
         s3 = QLabel("소리"); s3.setObjectName("section"); v.addWidget(s3)
         c3 = QFrame(); c3.setObjectName("card"); l3 = QVBoxLayout(c3); l3.setContentsMargins(16, 12, 16, 12); l3.setSpacing(8)
-        self.sound_on = QCheckBox("알림 소리"); self.sound_on.setChecked(g.sound); l3.addWidget(self.sound_on)
-        self.voice_on = QCheckBox("음성으로 알림 (\"마나실드 꺼짐\", \"햄버프 30초\", 보스 버스트 \"붕파 적용!\")")
-        self.voice_on.setChecked(g.voice); l3.addWidget(self.voice_on)
-        vh = QLabel("윈도우 내장 한국어 음성으로 말합니다. 버프마다 음성/효과음/없음과 부를 이름은 [감시 항목]에서. "
-                    "여러 개가 한꺼번에 꺼지면 \"버프 N개 꺼짐\" 한 마디, 보스 버스트는 다른 소리를 끊고 바로 나옵니다")
+        self.sound_on = QCheckBox("소리 켜기"); self.sound_on.setChecked(g.sound); l3.addWidget(self.sound_on)
+        vh = QLabel("끄면 모든 소리가 꺼집니다 (화면 알림은 그대로). "
+                    "무엇을 어떤 소리로 알릴지는 항목마다 고릅니다 — 음성 / 효과음 / 소리 없음 (기본 소리 없음):\n"
+                    "  · 상태창 버프: [감시 항목] 카드의 '소리'\n"
+                    "  · 보스 디버프 빠짐·버스트: [보스 디버프] 줄의 소리 칸\n"
+                    "아래는 소리의 목소리·크기만 정합니다.")
         vh.setObjectName("muted"); vh.setWordWrap(True); l3.addWidget(vh)
 
         self.voice_name = QComboBox()
@@ -151,11 +152,11 @@ class GeneralWindow(QWidget):
         if not self.player:
             return
         if from_widgets:
-            self.player.set_options(self.voice_on.isChecked(), self.voice_vol.value(), self.effect_vol.value(),
+            self.player.set_options(True, self.voice_vol.value(), self.effect_vol.value(),
                                     self.voice_rate.value(), self.voice_name.currentData() or "", self.sound_file.text().strip())
         else:
             g = self.cfg.general
-            self.player.set_options(g.voice, g.voice_volume, g.effect_volume, g.voice_rate, g.voice_name, g.sound_file)
+            self.player.set_options(True, g.voice_volume, g.effect_volume, g.voice_rate, g.voice_name, g.sound_file)
 
     def _test(self, what):
         """저장 전 값으로 바로 들어보기 (닫을 때 저장 안 했으면 원래 값으로 되돌림)."""
@@ -178,7 +179,7 @@ class GeneralWindow(QWidget):
 
     def _save(self):
         g = self.cfg.general
-        g.sound, g.voice = self.sound_on.isChecked(), self.voice_on.isChecked()
+        g.sound = self.sound_on.isChecked()
         g.voice_volume, g.effect_volume = self.voice_vol.value(), self.effect_vol.value()
         g.voice_rate, g.voice_name = self.voice_rate.value(), self.voice_name.currentData() or ""
         g.sound_file = self.sound_file.text().strip()
