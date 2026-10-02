@@ -16,6 +16,7 @@
     전투 시작 때 처음부터 없는 것도 말한다 (목록에 바로 뜨므로). 한꺼번에 GROUP_MIN 개 이상이면 "보스 디버프 N개 빠짐".
     계속 빠져 있으면 BOSS_REPEAT(20초)마다 다시 "모모 빠짐".
 """
+import re
 from dataclasses import dataclass
 
 # 우선순위 (작을수록 먼저). 같거나 높은 우선순위가 오면 재생 중인 것을 끊는다
@@ -61,6 +62,48 @@ def spoken_name(label: str, cfg: SoundCfg | None) -> str:
     return s or "버프"
 
 
+_SINO = "영일이삼사오육칠팔구"
+_NATIVE1 = ["", "한", "두", "세", "네", "다섯", "여섯", "일곱", "여덟", "아홉"]
+_NATIVE10 = ["", "열", "스물", "서른", "마흔", "쉰", "예순", "일흔", "여든", "아흔"]
+
+
+def sino(n: int) -> str:
+    """한자어 수: 60 → 육십, 125 → 백이십오."""
+    n = int(n)
+    if n == 0:
+        return "영"
+    out = ""
+    for unit, word in ((1000, "천"), (100, "백"), (10, "십")):
+        d, n = divmod(n, unit)
+        if d:
+            out += ("" if d == 1 else _SINO[d]) + word
+    return out + (_SINO[n] if n else "")
+
+
+def native(n: int) -> str:
+    """고유어 수 (개수): 3 → 세, 12 → 열두. 100 이상은 한자어."""
+    n = int(n)
+    if not 0 < n < 100:
+        return sino(n)
+    t, o = divmod(n, 10)
+    return _NATIVE10[t] + _NATIVE1[o]
+
+
+def speak_numbers(text: str) -> str:
+    """음성으로 읽을 문구의 숫자를 한글로 (목소리에 따라 '60초'를 'six zero 초'로 읽는 일이 있어서).
+    '3개' → '세 개', 나머지는 한자어 ('60초' → '육십초', '4번' → '사번')."""
+    text = re.sub(r"(\d+)\s*(개|명|마리)", lambda m: f"{native(m.group(1))} {m.group(2)}", text)
+    return re.sub(r"\d+", lambda m: sino(m.group(0)), text)
+
+
+def time_words(sec: int) -> str:
+    """남은 시간을 말하기 좋게: 30 → '30초', 60 → '1분', 90 → '1분 30초'."""
+    m, s = divmod(int(sec), 60)
+    if not m:
+        return f"{s}초"
+    return f"{m}분" + (f" {s}초" if s else "")
+
+
 def phrase(kind: str, name: str, value=None) -> str | None:
     """상태창 이벤트 → 문구. None = 말하지 않음."""
     if kind == "off":
@@ -68,7 +111,7 @@ def phrase(kind: str, name: str, value=None) -> str | None:
     if kind == "on":
         return f"{name} 켜짐"
     if kind == "under" and value is not None:
-        return f"{name} {int(value)}초"
+        return f"{name} {time_words(value)}"
     if kind == "extended":
         return f"{name} 연장"
     return None                    # resync(갱신: 내가 한 일), lost/found, unextended 는 말하지 않음
@@ -159,7 +202,7 @@ def boss_utterance(events, mode_of, now) -> Utterance | None:
         elif kind == "under" and value is not None:
             modes.append(mode)
             if mode == "voice":
-                under.append(f"{label} {int(value)}초")
+                under.append(f"{label} {time_words(value)}")
     if not modes:
         return None
     if "voice" not in modes:
@@ -201,7 +244,7 @@ class BossSpeaker:
 
 def boss_phrases(name: str, thresholds) -> list[str]:
     """미리 합성할 보스 디버프 문구."""
-    return [f"{name} 빠짐"] + [f"{name} {int(t)}초" for t in thresholds]
+    return [f"{name} 빠짐"] + [f"{name} {time_words(t)}" for t in thresholds]
 
 
 def merge(us: list[Utterance], now: float) -> Utterance | None:

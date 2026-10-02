@@ -111,7 +111,8 @@ class GeneralWindow(QWidget):
         try:
             from win.voice import Tts
             for name, ko in Tts.list_voices():
-                self.voice_name.addItem(name + ("" if ko else "  (한국어 아님)"), name)
+                if ko:                                   # 한국어 아닌 목소리는 한글 문구를 못 읽음 → 목록에서 뺌
+                    self.voice_name.addItem(name, name)
         except Exception:
             pass
         self.voice_name.setCurrentIndex(max(0, self.voice_name.findData(g.voice_name)))

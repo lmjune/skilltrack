@@ -16,7 +16,7 @@ from pathlib import Path
 import numpy as np
 
 from core.paths import ASSETS, PROFILES
-from core.speech import SoundQueue, Utterance
+from core.speech import SoundQueue, Utterance, speak_numbers
 
 VOICE_DIR = PROFILES / "voice"
 SOUND_DIR = ASSETS / "sounds"
@@ -88,11 +88,16 @@ class Tts:
             pythoncom.CoInitialize()
             sp = win32com.client.Dispatch("SAPI.SpVoice")
             voices = [sp.GetVoices().Item(i) for i in range(sp.GetVoices().Count)]
+            korean = lambda t: "412" in (t.GetAttribute("Language") or "").lower().split(";")
             pick = None
             if self.voice_name:
                 pick = next((t for t in voices if t.GetDescription() == self.voice_name), None)
+                if pick is not None and not korean(pick):
+                    # 한국어가 아닌 목소리는 한글을 건너뛰고 숫자만 영어로 읽는다 ("식스지로") → 쓰지 않음
+                    print(f"음성: '{self.voice_name}' 은 한국어 목소리가 아니라 한글을 못 읽음 → 한국어 목소리로 대신")
+                    pick = None
             if pick is None:        # 기본: 한국어 목소리 (Language 412)
-                pick = next((t for t in voices if "412" in (t.GetAttribute("Language") or "").lower().split(";")), None)
+                pick = next((t for t in voices if korean(t)), None)
             if pick is None:
                 print("음성: 한국어 목소리가 없습니다 → 효과음으로 대신")
                 self.ok = False
@@ -111,6 +116,7 @@ class Tts:
 
     def synth(self, text: str) -> Path | None:
         """문구 wav 경로 (없으면 만듦). 실패하면 None."""
+        text = speak_numbers(text)                  # 숫자는 한글로 읽게 ("60초" → "육십초")
         p = self.path_for(text)
         if p.exists():
             return p

@@ -239,3 +239,30 @@ def test_boss_repeat_every_20s():
     # 전부 걸리면 끝
     assert sp.plan([], [], mode, 80.0) is None
     assert sp.plan([], [], mode, 100.0) is None
+
+
+def test_numbers_spoken_in_korean():
+    from core.speech import speak_numbers, phrase
+    assert speak_numbers("전장의 서곡 30초") == "전장의 서곡 삼십초"
+    assert speak_numbers(phrase("under", "서곡", 60)) == "서곡 일분"
+    assert speak_numbers(phrase("under", "서곡", 90)) == "서곡 일분 삼십초"
+    assert speak_numbers("버프 3개 꺼짐") == "버프 세 개 꺼짐"
+    assert speak_numbers("4번 버프 꺼짐") == "사번 버프 꺼짐"
+
+
+def test_timed_buff_expiry_spoken():
+    """시간 버프: 1분 → 30초 → 끝나면 '꺼짐' → 그 뒤 반복."""
+    from types import SimpleNamespace as NS
+    from core.tracker import Tracker, Watch
+    t = Tracker([Watch(b"a", "서곡", row_index=0, alert_off=True, alert_under=[60, 30], keep=True,
+                       keep_delay=10, keep_interval=20)], debounce=3)
+    pl = Planner()
+    said, now = [], 0.0
+    while now < 100:
+        sec = max(0, 70 - int(now))
+        ev = t.update([NS(index=0, active=sec > 0, name_width=None, extended=None)], {0: sec} if sec else {}, now=now)
+        u = merge(pl.plan([(e.kind, e.label, e.value) for e in ev], cfg_all(), now), now)
+        if u:
+            said.append(u.text)
+        now += 0.2
+    assert said == ["서곡 1분", "서곡 30초", "서곡 꺼짐", "서곡 꺼져 있음"]
