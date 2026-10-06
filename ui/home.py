@@ -87,6 +87,9 @@ class HomeWindow(QWidget):
         self.power.setStyleSheet("font-size:15px; font-weight:700;")
         self.power.toggled.connect(lambda on: app.toggle_active(on) if on != app.cfg.general.active else None)
         fl.addWidget(self.power); fl.addWidget(muted("던전 들어갈 때 켜고 나와서 끄세요 · 트레이 아이콘 클릭으로도 됩니다")); fl.addStretch()
+        self.gacha_btn = QPushButton(); self.gacha_btn.clicked.connect(app.toggle_gacha)
+        self.gacha_btn.setToolTip("결과 화면을 가리는 창. 끌어서 이동 · 가장자리로 크기 · 휠로 위에서부터 줄이기. 다시 누르면 사라짐")
+        fl.addWidget(self.gacha_btn)
         for text, fn in (("배치 편집", app.edit_begin), ("일반 설정", app.open_general)):
             b = QPushButton(text); b.clicked.connect(fn); fl.addWidget(b)
         root.addWidget(foot)
@@ -104,6 +107,7 @@ class HomeWindow(QWidget):
         if self.power.isChecked() != cfg.general.active:
             self.power.blockSignals(True); self.power.setChecked(cfg.general.active); self.power.blockSignals(False)
         self.power.setText("켜짐 — 감시 중" if cfg.general.active else "꺼짐")
+        self.gacha_btn.setText("가챠 덮개 끄기" if app.gacha_visible() else "가챠 덮개")
         if not cfg.profiles:
             self.sub.setText("캐릭터를 추가해서 시작하세요.")
             self.v.addWidget(muted("아직 캐릭터가 없습니다. 오른쪽 위 [+ 캐릭터 추가]"))

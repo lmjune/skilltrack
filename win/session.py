@@ -19,7 +19,7 @@ from core.rows import detect_rows
 from core.status import parse_rows
 from core.digits import GlyphLib, read_time
 from core.tracker import Tracker, Watch, Event
-from core.pixelwatch import read_site, Reading
+from core.pixelwatch import read_site, Reading, steady_off
 from core import layout_store, variants, screen
 
 from core.paths import ASSETS, DIAG, UNKNOWN_DIR
@@ -45,7 +45,7 @@ class Result:
 class FrameSaver:
     """의심 프레임 저장. 종류(reasons)를 좁혀 놓으면 그것만 저장."""
 
-    def __init__(self, folder: Path, reasons=("unknown", "unknownstate", "timelost", "lost"),
+    def __init__(self, folder: Path, reasons=("unknown", "unknownstate", "timelost", "lost", "fade"),
                  min_gap=10.0, max_files=30, enabled=True):
         self.folder, self.reasons = folder, reasons
         self.min_gap, self.max_files, self.enabled = min_gap, max_files, enabled
@@ -120,6 +120,7 @@ class Session:
         self.unknown = UnknownGlyphs(UNKNOWN_DIR, enabled=self.saver.enabled)
         self.notes = []
         self.verify_ratio = None
+        self.prev_level: dict[int, float] = {}       # 행 → 직전 프레임 획 자리 밝기 (페이드 거르기)
 
         r = self._load_or_calibrate(recalib)
         if r is None:
@@ -246,15 +247,26 @@ class Session:
         notes = []
         states = parse_rows(frame, self.layout)
         readings = {}
+        faded = []
         for s in states:
             if s.index in self.sites:
                 rd = read_site(frame, self.sites[s.index])
                 readings[s.index] = rd
                 s.active = {"on": True, "off": False}.get(rd.state)
+                # 화면 전환(페이드)·하얗게 되는 순간: 흰 글자(255)가 어두워지거나 밝아지며 잠깐 회색 범위를 지나간다
+                # → 그대로면 '꺼짐'으로 판정돼 거짓 알림. 진짜 꺼진 글자는 회색 값이 고정(209/127)이므로
+                #   직전 프레임과 밝기가 같을 때만 '꺼짐'으로 인정, 변하는 중이면 '모름'(판정 보류)
+                prev = self.prev_level.get(s.index)
+                self.prev_level[s.index] = rd.level
+                if rd.state == "off" and not steady_off(rd, prev):
+                    s.active = None
+                    faded.append(s.index)
             else:
                 # 획 자리가 없는 행: 파싱으로 대신. 255 획이 있으면 활성, 없으면 모름 (밝은 배경에선 비활성 확정 불가)
                 s.active = True if (s.name_range and s.active) else None
 
+        if len(faded) >= 2 and (n := self.saver.save(frame, "fade")):
+            notes.append(f"화면 밝기 변하는 중 (행 {', '.join(map(str, faded))}) → 꺼짐 판정 보류, 프레임 저장 {n}")
         for i, rd in readings.items():
             self.unk_n[i] = self.unk_n.get(i, 0) + 1 if rd.state == "unknown" else 0
             if self.unk_n[i] == 10 and (n := self.saver.save(frame, f"unknownstate_row{i}")):

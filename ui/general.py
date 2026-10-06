@@ -137,12 +137,28 @@ class GeneralWindow(QWidget):
         t3 = QPushButton("효과음 들어보기"); t3.clicked.connect(lambda: self._test("effect"))
         tr = QHBoxLayout(); tr.addWidget(t1); tr.addWidget(t2); tr.addWidget(t3); tr.addStretch(); l3.addLayout(tr)
         v.addWidget(c3)
+
+        s4 = QLabel("가챠 덮개"); s4.setObjectName("section"); v.addWidget(s4)
+        c4 = QFrame(); c4.setObjectName("card"); l4 = QVBoxLayout(c4); l4.setContentsMargins(16, 12, 16, 12); l4.setSpacing(8)
+        self.gacha_image = QLineEdit(g.gacha_image); self.gacha_image.setPlaceholderText("비우면 어두운 단색")
+        gp = QPushButton("찾기"); gp.setObjectName("ghost"); gp.clicked.connect(self._pick_gacha)
+        gc = QPushButton("비우기"); gc.setObjectName("ghost"); gc.clicked.connect(lambda: self.gacha_image.setText(""))
+        gr = QHBoxLayout(); gr.addWidget(self.gacha_image, 1); gr.addWidget(gp); gr.addWidget(gc)
+        l4.addLayout(field("덮개 그림", _wrap(gr), "png·jpg. 창 크기에 꽉 차게 (넘치는 부분은 잘림)"))
+        gh = QLabel("홈의 [가챠 덮개]로 켜고 끕니다. 끌어서 이동 · 가장자리로 크기 조절 · 휠을 내리면 위에서부터 줄어듭니다")
+        gh.setObjectName("muted"); gh.setWordWrap(True); l4.addWidget(gh)
+        v.addWidget(c4)
         v.addStretch()
 
         foot = QWidget(); foot.setObjectName("footer"); fl = QHBoxLayout(foot); fl.setContentsMargins(28, 12, 28, 12); fl.addStretch()
         cancel = QPushButton("취소"); cancel.clicked.connect(self.close); fl.addWidget(cancel)
         save = QPushButton("저장"); save.setObjectName("primary"); save.clicked.connect(self._save); fl.addWidget(save)
         root.addWidget(foot)
+
+    def _pick_gacha(self):
+        f, _ = QFileDialog.getOpenFileName(self, "가챠 덮개 그림", "", "그림 (*.png *.jpg *.jpeg *.bmp)")
+        if f:
+            self.gacha_image.setText(f)
 
     def _pick_sound(self):
         f, _ = QFileDialog.getOpenFileName(self, "효과음", "", "WAV (*.wav)")
@@ -184,6 +200,7 @@ class GeneralWindow(QWidget):
         g.voice_volume, g.effect_volume = self.voice_vol.value(), self.effect_vol.value()
         g.voice_rate, g.voice_name = self.voice_rate.value(), self.voice_name.currentData() or ""
         g.sound_file = self.sound_file.text().strip()
+        g.gacha_image = self.gacha_image.text().strip()
         self._saved = True
         g.hotkeys_enabled = self.hk_on.isChecked()
         g.hotkey_toggle, g.hotkey_settings, g.hotkey_edit = self.hk_toggle.text(), self.hk_settings.text(), self.hk_edit.text()

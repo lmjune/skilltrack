@@ -41,6 +41,7 @@ class Reading:
     white: float      # 획 자리 중 흰색 비율
     gray: float
     n: int
+    level: float = 0.0  # 획 자리 밝기 (중앙값). 진짜 꺼짐은 209/127 로 고정, 화면 전환 페이드는 프레임마다 변한다
 
 
 def make_site(frame, text_rect, name_range) -> NameSite:
@@ -103,4 +104,24 @@ def read_site(frame, site: NameSite) -> Reading:
     white = float((mn >= 250).mean())
     gray = float((neutral & (mn >= 100) & (mn <= 220)).mean())
     state = "on" if white >= ON_RATIO else "off" if gray >= ON_RATIO else "unknown"
-    return Reading(state, white, gray, n)
+    if state == "on" and _flat_white(sub, site.mask):
+        state = "unknown"           # 화면이 하얗게 된 순간: 꺼진 회색 글자도 255 가 된다 → '켜짐'이 아님
+    return Reading(state, white, gray, n, float(np.median(mn)))
+
+
+FLAT_WHITE = 0.9       # 글자 자리 밖(테두리·배경)까지 이 비율 이상 255 면 화면 전체가 하얀 것
+
+
+def _flat_white(sub, mask) -> bool:
+    """글자 주변까지 전부 흰색인가. 진짜 흰 글자는 어두운 테두리가 있어 주변이 이렇게 하얗지 않다."""
+    rest = sub[~mask]
+    if len(rest) == 0:
+        return False
+    return float((rest.min(axis=1) >= 250).mean()) >= FLAT_WHITE
+
+LEVEL_TOL = 6          # 꺼짐 판정: 직전 프레임과 획 밝기 차이가 이 이하여야 (진짜 꺼진 글자는 값이 고정)
+
+
+def steady_off(rd: Reading, prev_level) -> bool:
+    """'꺼짐' 읽기가 진짜인가. 화면 전환 페이드 중엔 흰 글자가 회색 범위를 지나가며 밝기가 프레임마다 변한다."""
+    return rd.state == "off" and prev_level is not None and abs(rd.level - prev_level) <= LEVEL_TOL

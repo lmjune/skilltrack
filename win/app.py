@@ -63,6 +63,7 @@ class App:
         self.overlay = self.mirror = self.skills = None
         self.boss = None                          # BossSession (프로필에서 켰을 때)
         self.boss_ov = None                       # BossOverlay
+        self.gacha = None                         # 가챠 덮개 (홈 버튼으로 켜고 끔, 캐릭터와 무관)
         self.client_xy = (0, 0)
         self.client_wh = (3840, 2160)
         self._last_sync = 0.0                     # _sync_client 마지막 확인 시각
@@ -80,6 +81,10 @@ class App:
         self.hk = Hotkeys(self.qt)
         self._bind_hotkeys()
         set_capturable(self.cfg.general.capturable)
+        if self.gacha is not None:
+            self.gacha.set_image(g1.gacha_image)      # 그림을 바꿨으면 바로 반영
+            if self.gacha_visible():
+                self.cfg.general.gacha_rect = [self.gacha.x(), self.gacha.y(), self.gacha.width(), self.gacha.height()]
 
         self.timer = QTimer(); self.timer.timeout.connect(self.tick)
         self.planner = Planner()                  # 소리 규칙 (묶기·반복 합치기)
@@ -669,7 +674,32 @@ class App:
         w.destroyed.connect(lambda *_: self.windows.pop(key, None) if self.windows.get(key) is w else None)
         w.show(); w.raise_(); w.activateWindow()
 
+    # ------------------------------------------------------------ 가챠 덮개
+    def gacha_visible(self) -> bool:
+        return self.gacha is not None and self.gacha.isVisible()
+
+    def toggle_gacha(self):
+        """홈의 [가챠 덮개]: 켜면 덮개 창이 뜨고, 다시 누르면 사라진다 (자리는 기억)."""
+        from win.gacha_cover import GachaCover
+        g = self.cfg.general
+        if self.gacha_visible():
+            self.gacha.hide()
+            self.cfg.save()                           # 마지막 위치·크기 저장
+        else:
+            if self.gacha is None:
+                self.gacha = GachaCover(g.gacha_image, g.gacha_rect, on_moved=self._gacha_moved)
+            else:
+                self.gacha.set_image(g.gacha_image)
+                self.gacha.ensure_visible()
+            self.gacha.show(); self.gacha.raise_()
+        self._refresh_home()
+
+    def _gacha_moved(self, rect):
+        self.cfg.general.gacha_rect = rect            # 끌 때 저장 (드래그마다 파일 쓰지 않음)
+
     def quit(self):
+        if self.gacha_visible():
+            self.cfg.save()
         if self.player:
             self.player.stop()
         self.timer.stop(); self.hk.unbind_all(); self.tray.hide(); self.qt.quit()
