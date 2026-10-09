@@ -27,6 +27,7 @@ from win.window import find_window, client_rect
 HINT = {
     "status": "시간이 표시되는 버프를 하나 켜두고, 상태창을 넉넉히 감싸게 드래그하세요 (좌우는 자동으로 맞춰집니다)",
     "skill":  "스킬창 하나를 감싸게 드래그하세요 (대충 그려도 격자를 알아서 찾습니다)",
+    "tuarim": "투아림(도르카 숫자 + 부스트 %)을 감싸게 드래그하세요. 숫자가 두 자리·100% 가 돼도 잘리지 않게 조금 넉넉히",
 }
 
 
@@ -114,6 +115,14 @@ class Calibrator(QWidget):
                 self.result = {"ok": has_time, "boxes": boxes,
                                "msg": f"행 {len(L.rows)}개 (고정 {len(L.sections[0])}개), {note}" + (" — Enter 저장 / R 다시 / Esc 취소" if has_time else ""),
                                "rect": (x + left, y, right - left, h)}
+            elif self.mode == "tuarim":
+                from core.tuarim_collect import text_mask
+                crop = self.cap.grab_sure((x, y, w, h))
+                n = int(text_mask(crop).sum())
+                ok = n >= 10
+                self.result = {"ok": ok, "boxes": [(x, y, w, h, True)], "rect": (x, y, w, h),
+                               "msg": (f"흰 글자 {n}px — 도르카 숫자와 % 가 다 들어갔으면 Enter 저장 / R 다시 / Esc 취소" if ok
+                                       else "흰 글자가 안 보임 — 도르카 숫자와 % 를 감싸게 다시")}
             else:
                 full = self.cap.grab_sure((0, 0, self.width(), self.height()))
                 g = detect_grid_in(full, (x, y, w, h))
@@ -134,6 +143,13 @@ class Calibrator(QWidget):
         rel = [x - cx, y - cy, w, h]
         if self.mode == "status":
             self.prof.regions.status = rel
+        elif self.mode == "tuarim":
+            self.prof.regions.tuarim = rel
+            from core.paths import ASSETS
+            if (ASSETS / "tuarim" / f"{screen.current().key}.json").exists():
+                self.prof.tuarim_enabled = True              # 이 UI 크기용 글자 세트가 있으면 바로 알림
+            else:
+                self.prof.tuarim_collect = True              # 없으면 샘플부터 모은다
         else:
             g = self.result["grid"]
             entry = {"rect": rel, "grid": {"xs": [int(v) - cx for v in g.xs], "ys": [int(v) - cy for v in g.ys], "w": int(g.w), "h": int(g.h)}}

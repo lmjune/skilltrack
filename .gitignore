@@ -1,10 +1,7 @@
+# 파이썬·빌드
 .venv/
 __pycache__/
 *.pyc
-*.log
-*.log.1
-
-# 빌드
 dist/
 build/
 
@@ -12,18 +9,17 @@ build/
 profiles/*.json
 profiles/layouts/
 profiles/variants/
-profiles/glyphs/
 profiles/voice/
+profiles/glyphs/
 diag/
+*.log
+*.log.1
 
-# 모르는 글자·아이콘 수집
+# 진단·수집 (자동 저장)
 assets/unknown/
 assets/boss_icons/bosses.json
-
-# 테스트 이미지 (용량 큼 → 저장소 밖에 백업. 정답·코드만 커밋)
 tests/out/
 tests/fixtures/*.png
 tests/fixtures/auto/
 tests/fixtures/boss/auto/
-tests/fixtures/variants/
-tests/fixtures/**/*.webp
+tests/fixtures/tuarim/1*_*/

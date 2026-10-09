@@ -16,7 +16,7 @@ from PySide6.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QMessageBox
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from core import screen
-from core.speech import (Planner, SoundCfg, Utterance, P_BURST, phrase, keep_phrase, spoken_name, merge,
+from core.speech import (Planner, SoundCfg, Utterance, P_BURST, P_STATUS, phrase, keep_phrase, spoken_name, merge,
                          BossSpeaker, boss_phrases)
 from core.config import Config, CONFIG_FILE, skill_capture_rect
 from win.session import Session, FrameSaver, event_text
@@ -64,6 +64,9 @@ class App:
         self.boss = None                          # BossSession (프로필에서 켰을 때)
         self.boss_ov = None                       # BossOverlay
         self.gacha = None                         # 가챠 덮개 (홈 버튼으로 켜고 끔, 캐릭터와 무관)
+        self.tuarim = None                        # 투아림 샘플 수집기 (core/tuarim_collect.SampleCollector)
+        self.tuarim_reader = self.tuarim_tr = None  # 투아림 읽기·알림 (core/tuarim)
+        self._tuarim_last = None
         self.client_xy = (0, 0)
         self.client_wh = (3840, 2160)
         self._last_sync = 0.0                     # _sync_client 마지막 확인 시각
@@ -187,9 +190,10 @@ class App:
         else:
             self.last_error = f"'{prof.name}' 상태창 영역이 없습니다 → [영역 설정] (스킬 표시·보스 디버프는 동작)"
         self._start_boss(prof)
+        self._start_tuarim(prof)
         self._setup_sound(prof)
         self._rebuild_overlays()
-        if not (self.sess or self.boss or self.skills):
+        if not (self.sess or self.boss or self.skills or self._tuarim_on()):
             self._refresh_home(); return            # 돌릴 게 하나도 없음
         self.timer.start(int(1000 / g.fps))
         if self.cfg.general.active and self.sess and not self.mismatch:
@@ -305,6 +309,8 @@ class App:
             self.skills.update(full)
         if self.boss:
             self._boss_tick(full)
+        if self._tuarim_on():
+            self._tuarim_tick(full)
         if not self.sess:
             return
         x, y, w, h = self.sess.region
@@ -653,6 +659,8 @@ class App:
         self.cfg = Config.load()
         if mode == "skill":
             self._rebuild_overlays()
+        if mode == "tuarim" and pid == self.cfg.current:
+            self.start_session()                       # 수집기를 새 영역으로 (타이머가 안 돌고 있었으면 시작)
         if mode == "status" and self.cfg.profiles.get(pid) and self.cfg.profiles[pid].regions.status:
             if pid != self.cfg.current:
                 self.switch_profile(pid)
@@ -673,6 +681,133 @@ class App:
         w.setAttribute(Qt.WA_DeleteOnClose)
         w.destroyed.connect(lambda *_: self.windows.pop(key, None) if self.windows.get(key) is w else None)
         w.show(); w.raise_(); w.activateWindow()
+
+    # ------------------------------------------------------------ 투아림 (도르카·부스트)
+    def tuarim_folder(self):
+        from core.tuarim_collect import env_key
+        return DIAG / "tuarim" / env_key(self.cfg.general.ui_variant, self.client_wh)
+
+    def _start_tuarim(self, prof):
+        """영역이 있으면: 알림이 켜져 있으면 읽기+알림, 샘플 수집이 켜져 있으면 수집 (둘 다 가능)."""
+        self.tuarim = self.tuarim_reader = self.tuarim_tr = None
+        self._tuarim_last = None
+        if not (prof and prof.regions.tuarim):
+            return
+        if prof.tuarim_enabled:
+            from core.tuarim import TuarimReader, TuarimTracker
+            f = ASSETS / "tuarim" / f"{screen.current().key}.json"
+            if f.exists():
+                self.tuarim_reader = TuarimReader(f, screen.scale())
+                self.tuarim_tr = TuarimTracker(soon_pct=prof.tuarim_soon_pct, dorca_low=prof.tuarim_dorca_low)
+                print(f"[투아림] 알림 켜짐 · 곧 투아림 {prof.tuarim_soon_pct or '끔'}% · 도르카 부족 {prof.tuarim_dorca_low or '끔'}")
+            else:
+                print(f"[투아림] 이 UI 크기({screen.current().label})용 글자 세트가 없습니다 → 샘플 수집으로 모아 보내주세요")
+        if prof.tuarim_collect:
+            from core.tuarim_collect import SampleCollector
+            self.tuarim = SampleCollector(self.tuarim_folder())
+            print(f"[투아림] 샘플 수집 준비 → {self.tuarim.folder} (지금 {self.tuarim.count}장)"
+                  + ("" if self.cfg.general.active else " · 켜기 상태에서 모입니다 (지금 꺼짐)"))
+
+    def _tuarim_on(self) -> bool:
+        return bool(self.tuarim or self.tuarim_reader)
+
+    def _tuarim_tick(self, full):
+        x, y, w, h = self.cfg.profile().regions.tuarim
+        cx, cy = self.client_xy
+        crop = full[cy + y:cy + y + h, cx + x:cx + x + w]
+        if crop.shape[0] != h or crop.shape[1] != w:
+            return
+        if self.tuarim_reader:
+            r = self.tuarim_reader.read(crop)
+            self._tuarim_last = r
+            for e in self.tuarim_tr.update(r):
+                self._tuarim_alert(e)
+        if self.tuarim:
+            was_full = self.tuarim.full
+            before = self.tuarim.count
+            name = self.tuarim.feed(crop)
+            self._tuarim_diag(crop, self.tuarim.count > before)
+            if name:
+                n = self.tuarim.count
+                print(f"[투아림] 샘플 {n}장 ({name})")
+                if n == 1 or n % 50 == 0:
+                    self.notify(f"투아림 샘플 {n}장", "info", 2.0)
+            if self.tuarim.full and not was_full:
+                self.notify("투아림 샘플이 다 찼습니다 — [투아림 설정]의 폴더 열기로 보내주세요", "ok", 6.0)
+        self._tuarim_home_tick()
+
+    def _tuarim_alert(self, e):
+        from core.tuarim import event_text, speech_text
+        prof = self.cfg.profile()
+        if e.kind == "burst" and not prof.tuarim_burst:
+            return
+        text = event_text(e)
+        level = "ok" if e.kind == "burst" else "warn"
+        print(f"[{datetime.now():%H:%M:%S}] [투아림] {text}")
+        self.overlay.push(text, level, 4.0, sound=False)
+        g, mode = self.cfg.general, prof.tuarim_sound
+        if g.sound and self.player and mode in ("voice", "effect"):
+            self.player.say(Utterance(mode, speech_text(e), level, P_STATUS, time.time(), key=f"tuarim:{e.kind}"))
+
+    def tuarim_status(self) -> str:
+        """홈 카드 표시: 지금 읽은 값."""
+        r = self._tuarim_last
+        if not self.tuarim_reader:
+            return ""
+        if r is None:
+            return "켜기 상태에서 읽습니다" if not self.cfg.general.active else "읽는 중…"
+        if not r.found:
+            return "투아림이 안 보임 (영역 확인)"
+        tr = self.tuarim_tr
+        d = "?" if tr.dorca is None else tr.dorca
+        p = "?" if tr.pct is None else f"{tr.pct}%"
+        eta = tr.eta()
+        return f"도르카 {d} · 부스트 {p}" + (f" (투아림까지 약 {eta // 60}분 {eta % 60}초)" if eta else "")
+
+    def _tuarim_diag(self, crop, saved):
+        """10초마다 수집 상태를 로그로 (안 모일 때 원인 찾기용): 처리한 프레임 수, 흰 글자 픽셀, 저장 수."""
+        from core.tuarim_collect import text_mask
+        st = getattr(self, "_tuarim_st", None)
+        now = time.time()
+        if st is None:
+            st = self._tuarim_st = {"t": now, "frames": 0, "px": 0, "saved": 0}
+        st["frames"] += 1; st["px"] += int(text_mask(crop).sum()); st["saved"] += int(saved)
+        if now - st["t"] >= 10:
+            n = st["frames"]
+            px = st["px"] // max(1, n)
+            why = "" if st["saved"] else (" — 흰 글자가 안 보임: 영역이 맞는지 [투아림 영역] 다시" if px < 10 else
+                                         " — 숫자가 안 바뀜 (사냥하면 모입니다)")
+            print(f"[투아림] 10초: 프레임 {n}개, 흰 글자 평균 {px}px, 새로 저장 {st['saved']}장 (총 {self.tuarim.count}장){why}")
+            self._tuarim_st = None
+
+    def _tuarim_home_tick(self):
+        """홈 카드 표시 갱신 (1초에 한 번)."""
+        now = time.time()
+        if now - getattr(self, "_tuarim_ref", 0) > 1.0:
+            self._tuarim_ref = now
+            h = self.windows.get("home")
+            if h is not None:
+                try:
+                    h.update_tuarim()
+                except (RuntimeError, AttributeError):
+                    pass
+
+    def open_tuarim(self):
+        from ui.tuarim import TuarimWindow
+        prof = self.cfg.profile()
+        if not prof:
+            return
+        self._show(TuarimWindow(self, prof), "tuarim")
+
+    def _tuarim_saved(self):
+        self.start_session()
+        self.notify("투아림 설정 저장", "info", 2.0)
+
+    def open_tuarim_folder(self):
+        import os
+        f = self.tuarim_folder()
+        f.mkdir(parents=True, exist_ok=True)
+        os.startfile(str(f))
 
     # ------------------------------------------------------------ 가챠 덮개
     def gacha_visible(self) -> bool:

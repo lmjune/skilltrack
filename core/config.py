@@ -124,6 +124,7 @@ class Regions:
     status: list | None = None            # [x, y, w, h] 클라이언트 기준
     skill: list = field(default_factory=list)   # [{"id", "rect", "grid"}]
     boss: list | None = None              # None 이면 win.boss_session.BOSS_RECT (바가 화면 고정이라 보통 필요 없음)
+    tuarim: list | None = None            # 투아림 (도르카 숫자 + 부스트 %) [x, y, w, h] 클라이언트 기준
 
 
 @dataclass
@@ -135,6 +136,12 @@ class Profile:
     skill_items: list = field(default_factory=list)      # [SkillItem]
     boss_enabled: bool = True                            # 보스 디버프 감시 (띠가 있는 보스에서만 동작)
     boss_watches: dict = field(default_factory=dict)     # {아이콘 이름: BossWatchCfg}
+    tuarim_collect: bool = False                         # 투아림 샘플 수집 (인식 만들기 전 단계, 숫자가 바뀔 때마다 저장)
+    tuarim_enabled: bool = False                         # 투아림 알림 (도르카·부스트 읽기)
+    tuarim_soon_pct: int = 95                            # 부스트가 이 % 이상이면 "곧 투아림 (약 N초)" 1회. 0 = 끔
+    tuarim_dorca_low: int = 0                            # 도르카가 이 값 이하면 "도르카 부족" 1회. 0 = 끔
+    tuarim_burst: bool = False                           # 투아림이 터질 때 "투아림!" 알림
+    tuarim_sound: str = "none"                           # voice | effect | none
 
     def boss_watch_list(self, icon_meta: dict) -> list:
         """icons.json 의 meta({id: {name, tags}}) 로 DebuffWatch 목록 생성. 같은 이름의 아이콘은 icon_ids 로 묶는다."""
@@ -232,5 +239,7 @@ def _profile_from(pd):
     ms = [MirrorRow(**_pick(r, MirrorRow)) for r in pd.get("mirror_rows", [])]
     sk = [SkillItem(**_pick(r, SkillItem)) for r in pd.get("skill_items", [])]
     bw = {k: BossWatchCfg(**_pick(v, BossWatchCfg)) for k, v in pd.get("boss_watches", {}).items()}
-    return Profile(name=pd.get("name", "캐릭터"), regions=Regions(status=rg.get("status"), skill=rg.get("skill", []), boss=rg.get("boss")),
-                   watches=ws, mirror_rows=ms, skill_items=sk, boss_enabled=pd.get("boss_enabled", True), boss_watches=bw)
+    return Profile(name=pd.get("name", "캐릭터"), regions=Regions(status=rg.get("status"), skill=rg.get("skill", []), boss=rg.get("boss"), tuarim=rg.get("tuarim")),
+                   watches=ws, mirror_rows=ms, skill_items=sk, boss_enabled=pd.get("boss_enabled", True), boss_watches=bw,
+                   **{k: pd[k] for k in ("tuarim_collect", "tuarim_enabled", "tuarim_soon_pct", "tuarim_dorca_low",
+                                         "tuarim_burst", "tuarim_sound") if k in pd})

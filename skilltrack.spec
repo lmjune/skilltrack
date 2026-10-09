@@ -13,6 +13,7 @@ a = Analysis(
         ("assets/sounds", "assets/sounds"),
         ("assets/fonts", "assets/fonts"),
         ("assets/screens", "assets/screens"),      # UI 크기 변형별 글자 세트 (core/screen.py)
+        ("assets/tuarim", "assets/tuarim"),        # 투아림 도르카·부스트 글자 세트 (core/tuarim.py)
     ],
     hiddenimports=collect_submodules("dxcam") + ["win32gui", "win32con", "win32api", "win32com.client", "pythoncom", "pywintypes"],
     hookspath=[],

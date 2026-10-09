@@ -64,7 +64,16 @@ class ProfileCard(QFrame):
         b4 = QPushButton("스킬창 영역 추가"); b4.setEnabled(current); b4.clicked.connect(lambda: home.app.calibrate("skill", pid)); btns.addWidget(b4)
         b5 = QPushButton("스킬 표시"); b5.setEnabled(current and bool(prof.regions.skill)); b5.clicked.connect(home.app.open_skills); btns.addWidget(b5)
         b6 = QPushButton("보스 디버프"); b6.setEnabled(current); b6.clicked.connect(home.app.open_boss); btns.addWidget(b6)
+        b7 = QPushButton("투아림 영역"); b7.setEnabled(current); b7.clicked.connect(lambda: home.app.calibrate("tuarim", pid)); btns.addWidget(b7)
         btns.addStretch(); v.addLayout(btns)
+
+        # 투아림: 지금 읽은 값 + 설정
+        if current and prof.regions.tuarim:
+            tr = QHBoxLayout(); tr.setSpacing(10)
+            tr.addWidget(QLabel("투아림"))
+            home.tuarim_label = muted(""); tr.addWidget(home.tuarim_label)
+            ts = QPushButton("투아림 설정"); ts.setObjectName("ghost"); ts.clicked.connect(home.app.open_tuarim); tr.addWidget(ts)
+            tr.addStretch(); v.addLayout(tr)
 
 
 class HomeWindow(QWidget):
@@ -98,7 +107,23 @@ class HomeWindow(QWidget):
         self.refresh()
 
     # ------------------------------------------------------------
+    def update_tuarim(self):
+        """현재 캐릭터 카드의 투아림 표시 (읽은 값 / 샘플 수집 장수)."""
+        lab = getattr(self, "tuarim_label", None)
+        if lab is None:
+            return
+        app, prof = self.app, self.app.cfg.profile()
+        parts = []
+        if prof and prof.tuarim_enabled:
+            parts.append(app.tuarim_status() or "알림 준비 중")
+        else:
+            parts.append("알림 꺼짐")
+        if app.tuarim is not None:
+            parts.append(f"샘플 {app.tuarim.count}장" + (" (다 참)" if app.tuarim.full else ""))
+        lab.setText(" · ".join(parts))
+
     def refresh(self):
+        self.tuarim_label = None
         while self.v.count():
             it = self.v.takeAt(0)
             if it.widget():
@@ -125,6 +150,7 @@ class HomeWindow(QWidget):
                 rows = len(app.sess.layout.rows) if (cur and app.sess) else 0
                 self.v.addWidget(ProfileCard(self, pid, prof, cur, rows, sum(1 for w in prof.watches.values() if w.enabled)))
         self.v.addStretch()
+        self.update_tuarim()
 
     def add(self):
         name, ok = QInputDialog.getText(self, "캐릭터 추가", "캐릭터 이름")
