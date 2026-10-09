@@ -27,6 +27,7 @@ from win.window import find_window, client_rect
 HINT = {
     "status": "시간이 표시되는 버프를 하나 켜두고, 상태창을 넉넉히 감싸게 드래그하세요 (좌우는 자동으로 맞춰집니다)",
     "skill":  "스킬창 하나를 감싸게 드래그하세요 (대충 그려도 격자를 알아서 찾습니다)",
+    "bars":   "화면 아래 생명력·마나·스태미나 막대 세 줄을 감싸게 드래그하세요 (막대 끝까지 다 들어가게)",
     "tuarim": "투아림(도르카 숫자 + 부스트 %)을 감싸게 드래그하세요. 숫자가 두 자리·100% 가 돼도 잘리지 않게 조금 넉넉히",
 }
 
@@ -115,6 +116,16 @@ class Calibrator(QWidget):
                 self.result = {"ok": has_time, "boxes": boxes,
                                "msg": f"행 {len(L.rows)}개 (고정 {len(L.sections[0])}개), {note}" + (" — Enter 저장 / R 다시 / Esc 취소" if has_time else ""),
                                "rect": (x + left, y, right - left, h)}
+            elif self.mode == "bars":
+                from core.bars import read_bars
+                crop = self.cap.grab_sure((x, y, w, h))
+                r = read_bars(crop)
+                names = (("hp", "생명력"), ("mp", "마나"), ("sp", "스태미나"))
+                found = [f"{n} {round(r[k] * 100)}%" for k, n in names if r[k] is not None]
+                ok = r["hp"] is not None or r["mp"] is not None
+                self.result = {"ok": ok, "boxes": [(x, y, w, h, True)], "rect": (x, y, w, h),
+                               "msg": (f"{' · '.join(found)} — 맞으면 Enter 저장 / R 다시 / Esc 취소" if ok
+                                       else "막대를 못 찾음 — 생명력·마나 막대를 감싸게 다시")}
             elif self.mode == "tuarim":
                 from core.tuarim_collect import text_mask
                 crop = self.cap.grab_sure((x, y, w, h))
@@ -143,6 +154,8 @@ class Calibrator(QWidget):
         rel = [x - cx, y - cy, w, h]
         if self.mode == "status":
             self.prof.regions.status = rel
+        elif self.mode == "bars":
+            self.prof.regions.bars = rel
         elif self.mode == "tuarim":
             self.prof.regions.tuarim = rel
             from core.paths import ASSETS

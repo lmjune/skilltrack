@@ -66,6 +66,9 @@ class App:
         self.gacha = None                         # 가챠 덮개 (홈 버튼으로 켜고 끔, 캐릭터와 무관)
         self.tuarim = None                        # 투아림 샘플 수집기 (core/tuarim_collect.SampleCollector)
         self.tuarim_reader = self.tuarim_tr = None  # 투아림 읽기·알림 (core/tuarim)
+        self.bars_tr = self.bars_col = None       # 생명력·마나·스태미나 (core/bars)
+        self.res_ov = self.edge_ov = None         # 자원 알림 칸 / 화면 가장자리 효과
+        self._bars_last = None
         self._tuarim_last = None
         self.client_xy = (0, 0)
         self.client_wh = (3840, 2160)
@@ -191,9 +194,10 @@ class App:
             self.last_error = f"'{prof.name}' 상태창 영역이 없습니다 → [영역 설정] (스킬 표시·보스 디버프는 동작)"
         self._start_boss(prof)
         self._start_tuarim(prof)
+        self._start_bars(prof)
         self._setup_sound(prof)
         self._rebuild_overlays()
-        if not (self.sess or self.boss or self.skills or self._tuarim_on()):
+        if not (self.sess or self.boss or self.skills or self._tuarim_on() or self.bars_tr):
             self._refresh_home(); return            # 돌릴 게 하나도 없음
         self.timer.start(int(1000 / g.fps))
         if self.cfg.general.active and self.sess and not self.mismatch:
@@ -259,6 +263,11 @@ class App:
             self.skills.close(); self.skills = None
         if self.boss_ov:
             self.boss_ov.close(); self.boss_ov = None
+        if self.res_ov:
+            self.res_ov.close(); self.res_ov = None
+        if self.bars_tr:
+            from win.resource_overlay import ResourceOverlay
+            self.res_ov = ResourceOverlay(pos=tuple(ov.res_pos))
         self.overlay = AlertOverlay(pos=tuple(ov.alert_pos), width=ov.alert_width, font_pt=ov.alert_font_pt)
         if self.boss:
             self.boss_ov = BossOverlay(self.boss.icons, pos=tuple(ov.boss_pos), scale=ov.boss_scale, opacity=ov.boss_opacity)
@@ -277,6 +286,8 @@ class App:
         self.overlay.ensure_on_screen()
         if self.boss_ov:
             self.boss_ov.ensure_on_screen()
+        if self.res_ov:
+            self.res_ov.ensure_on_screen()
         for g in (self.skills, self.mirror):
             if g:
                 g.ensure_visible()
@@ -311,6 +322,9 @@ class App:
             self._boss_tick(full)
         if self._tuarim_on():
             self._tuarim_tick(full)
+        if self.bars_tr:
+            self._bars_tick(full)
+            self._tuarim_home_tick()
         if not self.sess:
             return
         x, y, w, h = self.sess.region
@@ -474,6 +488,10 @@ class App:
             self.overlay.setVisible(bool(on))
         if self.boss_ov and self.boss_ov.isVisible() != bool(on):
             self.boss_ov.setVisible(bool(on))
+        if self.res_ov and self.res_ov.isVisible() != bool(on):
+            self.res_ov.setVisible(bool(on))
+        if self.edge_ov and not on:
+            self.edge_ov.set_levels({})                   # 게임이 뒤로 가거나 끄면 화면 효과도 끈다
         for grp in (self.mirror, self.skills):
             if grp:
                 grp.set_visible(bool(on))
@@ -494,6 +512,8 @@ class App:
         self.overlay.set_edit(True)
         if self.boss_ov:
             self.boss_ov.set_edit(True)
+        if self.res_ov:
+            self.edit["res"] = self.res_ov.pos(); self.res_ov.set_edit(True)
         for g in self._groups():
             g.set_edit(True)
         bar = EditBar(ov.mirror_scale, ov.mirror_opacity, has_mirror=self.mirror is not None,
@@ -519,6 +539,8 @@ class App:
         ov, prof = self.cfg.overlays, self.cfg.profile()
         if save:
             ov.alert_pos = [self.overlay.x(), self.overlay.y()]
+            if self.res_ov:
+                ov.res_pos = [self.res_ov.x(), self.res_ov.y()]
             if self.boss_ov:
                 ov.boss_pos, ov.boss_scale = [self.boss_ov.x(), self.boss_ov.y()], round(self.boss_ov.scale, 2)
             if prof:
@@ -540,6 +562,8 @@ class App:
         else:
             apos, gpos, mop, sop, bback = self.edit["backup"]
             self.overlay.move(apos)
+            if self.res_ov and self.edit.get("res") is not None:
+                self.res_ov.move(self.edit["res"])
             if self.boss_ov and bback:
                 self.boss_ov.move(bback[0]); self.boss_ov.set_scale(bback[1])
             for g, saved in zip(self._groups(), gpos):
@@ -659,7 +683,7 @@ class App:
         self.cfg = Config.load()
         if mode == "skill":
             self._rebuild_overlays()
-        if mode == "tuarim" and pid == self.cfg.current:
+        if mode in ("tuarim", "bars") and pid == self.cfg.current:
             self.start_session()                       # 수집기를 새 영역으로 (타이머가 안 돌고 있었으면 시작)
         if mode == "status" and self.cfg.profiles.get(pid) and self.cfg.profiles[pid].regions.status:
             if pid != self.cfg.current:
@@ -681,6 +705,96 @@ class App:
         w.setAttribute(Qt.WA_DeleteOnClose)
         w.destroyed.connect(lambda *_: self.windows.pop(key, None) if self.windows.get(key) is w else None)
         w.show(); w.raise_(); w.activateWindow()
+
+    # ------------------------------------------------------------ 생명력·마나·스태미나
+    def _start_bars(self, prof):
+        self.bars_tr = self.bars_col = None
+        self._bars_last = None
+        if self.edge_ov:
+            self.edge_ov.set_levels({})
+        if not (prof and prof.regions.bars):
+            return
+        from core.bars import BarTracker
+        self.bars_tr = BarTracker(prof.bars)
+        on = [f"{n} {c.pct}%" for k, n in (("hp", "생명력"), ("mp", "마나"), ("sp", "스태미나")) if (c := prof.bars[k]).enabled]
+        print(f"[자원] 알림: {', '.join(on) or '없음'}")
+        if prof.bars_collect:
+            from core.tuarim_collect import SampleCollector, env_key
+            self.bars_col = SampleCollector(DIAG / "bars" / env_key(self.cfg.general.ui_variant, self.client_wh))
+            print(f"[자원] 샘플 수집 → {self.bars_col.folder} (지금 {self.bars_col.count}장)")
+
+    def _mana_shield(self):
+        """상태창 감시 중인 마나실드: True(켜짐) / False(꺼짐) / None(감시 안 함·모름)."""
+        if not self.sess:
+            return None
+        for t in self.sess.tracker.tracks:
+            if "마나실드" in t.watch.label.replace(" ", ""):
+                return t.active
+        return None
+
+    def _bars_tick(self, full):
+        from core.bars import read_bars, event_text, speech_text
+        x, y, w, h = self.cfg.profile().regions.bars
+        cx, cy = self.client_xy
+        crop = full[cy + y:cy + y + h, cx + x:cx + x + w]
+        if crop.shape[0] != h or crop.shape[1] != w:
+            return
+        ratios = read_bars(crop)
+        self._bars_last = ratios
+        prof, g = self.cfg.profile(), self.cfg.general
+        for e in self.bars_tr.update(ratios):
+            print(f"[{datetime.now():%H:%M:%S}] [자원] {speech_text(e)} ({e.pct}%)")
+            mode = prof.bars[e.key].sound
+            if g.sound and self.player and mode in ("voice", "effect"):
+                prio = P_BURST if e.key == "hp" else P_STATUS      # 생명력은 가장 먼저
+                self.player.say(Utterance(mode, speech_text(e), "danger", prio, time.time(), key=f"bar:{e.key}"))
+        if self.res_ov:
+            self.res_ov.set_rows(self.bars_tr.text_rows())
+        levels = self.bars_tr.edge_levels(self._mana_shield())
+        if levels and self.edge_ov is None:
+            from win.resource_overlay import EdgeOverlay
+            self.edge_ov = EdgeOverlay()
+        if self.edge_ov:
+            if levels:
+                self.edge_ov.cover((cx, cy, *self.client_wh), self._recog_rects(cx, cy))
+            self.edge_ov.set_levels(levels)
+        if self.bars_col and self.bars_col.feed(crop):
+            print(f"[자원] 샘플 {self.bars_col.count}장")
+
+    def _recog_rects(self, cx, cy):
+        """인식에 쓰는 영역들 (물리 픽셀, 화면 기준) — 화면 효과가 그 위를 칠하지 않게."""
+        rg = self.cfg.profile().regions
+        from win.boss_session import boss_rect
+        rects = [rg.bars, rg.status, rg.tuarim, rg.boss or boss_rect(*self.client_wh)] + \
+                [s.get("rect") for s in rg.skill if isinstance(s, dict)]
+        return [(cx + r[0], cy + r[1], r[2], r[3]) for r in rects if r and len(r) == 4]
+
+    def bars_status(self) -> str:
+        r = self._bars_last
+        if not self.bars_tr:
+            return ""
+        if r is None:
+            return "켜기 상태에서 읽습니다" if not self.cfg.general.active else "읽는 중…"
+        names = (("hp", "생명력"), ("mp", "마나"), ("sp", "스태미나"))
+        parts = [f"{n} {round(r[k] * 100)}%" for k, n in names if r.get(k) is not None]
+        return " · ".join(parts) if parts else "막대가 안 보임 (영역 확인)"
+
+    def open_bars(self):
+        from ui.bars import BarsWindow
+        prof = self.cfg.profile()
+        if prof:
+            self._show(BarsWindow(self, prof), "bars")
+
+    def _bars_saved(self):
+        self.start_session()
+        self.notify("자원 알림 설정 저장", "info", 2.0)
+
+    def open_bars_folder(self):
+        import os
+        from core.tuarim_collect import env_key
+        f = DIAG / "bars" / env_key(self.cfg.general.ui_variant, self.client_wh)
+        f.mkdir(parents=True, exist_ok=True)
+        os.startfile(str(f))
 
     # ------------------------------------------------------------ 투아림 (도르카·부스트)
     def tuarim_folder(self):

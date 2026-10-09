@@ -57,23 +57,37 @@ class ProfileCard(QFrame):
             hint = "설정 완료"
         v.addWidget(muted(hint))
 
-        btns = QHBoxLayout(); btns.setSpacing(8)
-        b1 = QPushButton("영역 설정"); b1.clicked.connect(lambda: home.app.calibrate("status", pid)); btns.addWidget(b1)
-        b2 = QPushButton("감시 항목"); b2.setEnabled(current and has_layout); b2.clicked.connect(home.app.open_watches); btns.addWidget(b2)
-        b3 = QPushButton("레이아웃 다시"); b3.setEnabled(current and has_region); b3.clicked.connect(lambda: home.app.start_session(recalib=True)); btns.addWidget(b3)
-        b4 = QPushButton("스킬창 영역 추가"); b4.setEnabled(current); b4.clicked.connect(lambda: home.app.calibrate("skill", pid)); btns.addWidget(b4)
-        b5 = QPushButton("스킬 표시"); b5.setEnabled(current and bool(prof.regions.skill)); b5.clicked.connect(home.app.open_skills); btns.addWidget(b5)
-        b6 = QPushButton("보스 디버프"); b6.setEnabled(current); b6.clicked.connect(home.app.open_boss); btns.addWidget(b6)
-        b7 = QPushButton("투아림 영역"); b7.setEnabled(current); b7.clicked.connect(lambda: home.app.calibrate("tuarim", pid)); btns.addWidget(b7)
-        btns.addStretch(); v.addLayout(btns)
+        # 기능별로 한 줄씩: 제목 + 버튼 (한 줄에 다 넣으면 창이 너무 가로로 길어진다)
+        def group(title, *buttons):
+            h = QHBoxLayout(); h.setSpacing(8)
+            t = QLabel(title); t.setFixedWidth(52); t.setStyleSheet("font-weight:600;"); h.addWidget(t)
+            for b in buttons:
+                h.addWidget(b)
+            h.addStretch(); v.addLayout(h)
+        b1 = QPushButton("영역 설정"); b1.clicked.connect(lambda: home.app.calibrate("status", pid))
+        b2 = QPushButton("감시 항목"); b2.setEnabled(current and has_layout); b2.clicked.connect(home.app.open_watches)
+        b3 = QPushButton("레이아웃 다시"); b3.setEnabled(current and has_region); b3.clicked.connect(lambda: home.app.start_session(recalib=True))
+        group("상태창", b1, b2, b3)
+        b4 = QPushButton("영역 추가"); b4.setEnabled(current); b4.clicked.connect(lambda: home.app.calibrate("skill", pid))
+        b5 = QPushButton("스킬 표시"); b5.setEnabled(current and bool(prof.regions.skill)); b5.clicked.connect(home.app.open_skills)
+        group("스킬창", b4, b5)
+        b6 = QPushButton("보스 디버프"); b6.setEnabled(current); b6.clicked.connect(home.app.open_boss)
+        group("보스", b6)
 
-        # 투아림: 지금 읽은 값 + 설정
-        if current and prof.regions.tuarim:
-            tr = QHBoxLayout(); tr.setSpacing(10)
-            tr.addWidget(QLabel("투아림"))
-            home.tuarim_label = muted(""); tr.addWidget(home.tuarim_label)
-            ts = QPushButton("투아림 설정"); ts.setObjectName("ghost"); ts.clicked.connect(home.app.open_tuarim); tr.addWidget(ts)
-            tr.addStretch(); v.addLayout(tr)
+        # 생명력·마나·스태미나 / 투아림: 한 줄씩 [영역] [설정] 지금 읽은 값 (버튼이 한 줄에 몰려 너무 길어지지 않게)
+        if current:
+            def line(title, region_mode, has, setting_text, open_fn, tip=""):
+                h = QHBoxLayout(); h.setSpacing(8)
+                t = QLabel(title); t.setFixedWidth(52); t.setStyleSheet("font-weight:600;"); h.addWidget(t)
+                rb = QPushButton("영역 설정" if not has else "영역 다시"); rb.setToolTip(tip)
+                rb.clicked.connect(lambda: home.app.calibrate(region_mode, pid)); h.addWidget(rb)
+                sb = QPushButton(setting_text); sb.setEnabled(has); sb.clicked.connect(open_fn); h.addWidget(sb)
+                lab = muted("" if has else "영역을 먼저 지정하세요"); h.addWidget(lab, 1)
+                v.addLayout(h)
+                return lab if has else None
+            home.bars_label = line("자원", "bars", bool(prof.regions.bars), "알림 설정", home.app.open_bars,
+                                   "생명력·마나·스태미나 막대")
+            home.tuarim_label = line("투아림", "tuarim", bool(prof.regions.tuarim), "알림 설정", home.app.open_tuarim)
 
 
 class HomeWindow(QWidget):
@@ -108,7 +122,13 @@ class HomeWindow(QWidget):
 
     # ------------------------------------------------------------
     def update_tuarim(self):
-        """현재 캐릭터 카드의 투아림 표시 (읽은 값 / 샘플 수집 장수)."""
+        """현재 캐릭터 카드의 투아림·자원 표시 (읽은 값 / 샘플 수집 장수). 1초에 한 번."""
+        bl = getattr(self, "bars_label", None)
+        if bl is not None:
+            try:
+                bl.setText(self.app.bars_status() or "알림 준비 중")
+            except RuntimeError:
+                self.bars_label = None
         lab = getattr(self, "tuarim_label", None)
         if lab is None:
             return
@@ -124,6 +144,7 @@ class HomeWindow(QWidget):
 
     def refresh(self):
         self.tuarim_label = None
+        self.bars_label = None
         while self.v.count():
             it = self.v.takeAt(0)
             if it.widget():

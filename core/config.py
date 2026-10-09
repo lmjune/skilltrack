@@ -97,6 +97,7 @@ class Overlays:
     boss_pos: list = field(default_factory=lambda: [1500, 1150])       # 보스 디버프 목록 위치
     boss_scale: float = 3.0                                            # 아이콘 12px × 배율
     boss_opacity: float = 0.95
+    res_pos: list = field(default_factory=lambda: [1500, 1000])        # 자원 알림 칸 (생명력·마나·스태미나 부족)
 
 
 def skill_capture_rect(rg: dict) -> tuple:
@@ -119,12 +120,19 @@ class SkillItem:
     scale: float | None = None
 
 
+def _default_bars():
+    from core.bars import DEFAULTS
+    from dataclasses import replace
+    return {k: replace(v) for k, v in DEFAULTS.items()}
+
+
 @dataclass
 class Regions:
     status: list | None = None            # [x, y, w, h] 클라이언트 기준
     skill: list = field(default_factory=list)   # [{"id", "rect", "grid"}]
     boss: list | None = None              # None 이면 win.boss_session.BOSS_RECT (바가 화면 고정이라 보통 필요 없음)
     tuarim: list | None = None            # 투아림 (도르카 숫자 + 부스트 %) [x, y, w, h] 클라이언트 기준
+    bars: list | None = None              # 생명력·마나·스태미나 막대 [x, y, w, h] 클라이언트 기준
 
 
 @dataclass
@@ -142,6 +150,8 @@ class Profile:
     tuarim_dorca_low: int = 0                            # 도르카가 이 값 이하면 "도르카 부족" 1회. 0 = 끔
     tuarim_burst: bool = False                           # 투아림이 터질 때 "투아림!" 알림
     tuarim_sound: str = "none"                           # voice | effect | none
+    bars: dict = field(default_factory=_default_bars)    # {"hp"|"mp"|"sp": BarCfg} 자원 부족 알림 (core/bars.py)
+    bars_collect: bool = False                           # 막대 샘플 수집 (색이 바뀌는 상태 확인용)
 
     def boss_watch_list(self, icon_meta: dict) -> list:
         """icons.json 의 meta({id: {name, tags}}) 로 DebuffWatch 목록 생성. 같은 이름의 아이콘은 icon_ids 로 묶는다."""
@@ -239,7 +249,18 @@ def _profile_from(pd):
     ms = [MirrorRow(**_pick(r, MirrorRow)) for r in pd.get("mirror_rows", [])]
     sk = [SkillItem(**_pick(r, SkillItem)) for r in pd.get("skill_items", [])]
     bw = {k: BossWatchCfg(**_pick(v, BossWatchCfg)) for k, v in pd.get("boss_watches", {}).items()}
-    return Profile(name=pd.get("name", "캐릭터"), regions=Regions(status=rg.get("status"), skill=rg.get("skill", []), boss=rg.get("boss"), tuarim=rg.get("tuarim")),
+    return Profile(name=pd.get("name", "캐릭터"), regions=Regions(status=rg.get("status"), skill=rg.get("skill", []), boss=rg.get("boss"), tuarim=rg.get("tuarim"),
+                                                       bars=rg.get("bars")),
                    watches=ws, mirror_rows=ms, skill_items=sk, boss_enabled=pd.get("boss_enabled", True), boss_watches=bw,
+                   bars=_bars_from(pd.get("bars")),
                    **{k: pd[k] for k in ("tuarim_collect", "tuarim_enabled", "tuarim_soon_pct", "tuarim_dorca_low",
-                                         "tuarim_burst", "tuarim_sound") if k in pd})
+                                         "tuarim_burst", "tuarim_sound", "bars_collect") if k in pd})
+
+
+def _bars_from(d):
+    from core.bars import BarCfg
+    out = _default_bars()
+    for k, v in (d or {}).items():
+        if k in out and isinstance(v, dict):
+            out[k] = BarCfg(**_pick(v, BarCfg))
+    return out
