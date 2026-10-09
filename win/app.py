@@ -35,15 +35,9 @@ LEVEL = {"off": ("danger", 6), "keep": ("danger", 5), "under": ("warn", 5), "los
          "on": ("ok", 3), "extended": ("info", 3), "unextended": ("info", 3), "resync": ("ok", 3)}
 
 
-def make_icon(color="#5b8cff", paused=False):
-    pm = QPixmap(64, 64); pm.fill(Qt.transparent)
-    p = QPainter(pm); p.setRenderHint(QPainter.Antialiasing)
-    p.setBrush(QColor("#8b919c" if paused else color)); p.setPen(Qt.NoPen)
-    p.drawRoundedRect(6, 6, 52, 52, 14, 14)
-    p.setBrush(QColor("white")); p.drawEllipse(20, 20, 24, 24)
-    p.setBrush(QColor("#8b919c" if paused else color)); p.drawEllipse(27, 27, 10, 10)
-    p.end()
-    return QIcon(pm)
+def make_icon(paused=False):
+    from win.app_icon import make_icon as _icon
+    return _icon(paused=paused)
 
 
 class App:
@@ -51,6 +45,7 @@ class App:
         self.qt = QApplication(argv)
         self.qt.setQuitOnLastWindowClosed(False)
         theme.apply(self.qt)
+        self.qt.setWindowIcon(make_icon())          # 모든 창 제목 표시줄·작업 표시줄
         from win.capture import Capture          # dxcam 은 QApplication 뒤에
         self.cap = Capture()
         self.cfg = Config.load()

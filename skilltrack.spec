@@ -29,6 +29,6 @@ exe = EXE(
     exclude_binaries=True,
     name="mabiaura",
     console=False,           # 콘솔 없음. 로그는 exe 옆 skilltrack.log (win/run.py)
-    icon=None,               # assets/icon.ico 만들면 여기에
+    icon='assets/icon.ico',  # win/app_icon.py 의 save_ico 로 만든 것
 )
 coll = COLLECT(exe, a.binaries, a.datas, strip=False, upx=False, name="mabiaura")
