@@ -33,6 +33,15 @@ MIN_COLS = 20       # 판정된 열이 이만큼은 있어야 그 막대로 인�
 MIN_KNOWN = 0.6     # 막대 폭 중 판정된 열 비율
 
 
+def _soft_ui() -> bool:
+    """UI 배율 조정 켬 100% 변형인가 (스태미나 테두리 그림이 다르다)."""
+    try:
+        from core import screen
+        return screen.current().key == "100_mabi"
+    except Exception:
+        return False
+
+
 def _split(c):
     """열 판정(1 찬 / -1 빈 / 0 모름) → 찬 곳 끝 위치 b (0..n). 왼쪽 찬·오른쪽 빈 계단에 가장 잘 맞는 자리.
     모르는 열은 건너뛰고, 같은 점수가 여럿이면 그 가운데."""
@@ -78,6 +87,16 @@ def read_bars(crop_bgr) -> dict:
         f = (m & is_fill).sum(axis=0)
         e = (m & ~is_fill).sum(axis=0)
         c = np.where(f > e, 1, np.where(e > f, -1, 0))
+        if key == "sp" and _soft_ui():
+            # UI 배율 조정 100%: 테두리가 안쪽 색과 섞여 찬 곳 테두리 (255,255,52) = 안쪽, 빈 곳 테두리만 (250,231,52) 로 다르다.
+            # 위 규칙(빨강 밝기)으로는 빈 곳도 '찬' 이 됨 → 빈 테두리 색이 있는 열 = 빈 곳, 없으면 안쪽·외곽선 색으로 찬 곳
+            band = rgb[y0 - 1:y1 + 2] if y0 > 0 else rgb[y0:y1 + 2]
+            R_, G_, B_ = band[..., 0], band[..., 1], band[..., 2]
+            gr = G_ / np.maximum(R_, 1.0)
+            empty_px = (gr >= 0.88) & (gr <= 0.955) & (R_ >= 230) & (B_ < 80)
+            full_px = ((gr >= 0.97) & (R_ >= 240) & (B_ < 80)) | ((gr < 0.865) & (R_ >= 60) & (B_ < 0.4 * R_))
+            ce = empty_px.any(axis=0)
+            c = np.where(ce, -1, np.where(full_px.any(axis=0), 1, 0))
         xs = np.nonzero(c)[0]
         if len(xs) < MIN_COLS:
             continue

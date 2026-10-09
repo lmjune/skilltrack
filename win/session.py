@@ -114,7 +114,11 @@ class Session:
         """
         self.cap, self.region, self.rect, self.pid = cap, region, rect, pid
         sc = screen.current()                        # UI 크기 변형 (앱이 설정에서 set_screen)
-        self.lib = GlyphLib.load(sc.glyphs, fuzzy=sc.fuzzy, extra=screen.user_glyphs())
+        if sc.gray:                     # UI 배율 조정 100%: 밝기 템플릿 (core/digits.GrayLib)
+            from core.digits import GrayLib
+            self.lib = GrayLib.load(sc.glyphs)
+        else:
+            self.lib = GlyphLib.load(sc.glyphs, fuzzy=sc.fuzzy, extra=screen.user_glyphs())
         self.last_val = {}                           # row → (읽은 초, 시각). 모르는 글자 자동 학습용
         self.saver = saver or FrameSaver(DIAG / "auto")
         self.unknown = UnknownGlyphs(UNKNOWN_DIR, enabled=self.saver.enabled)

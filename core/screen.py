@@ -4,6 +4,8 @@
 - "100"       UI 크기 변경 없음 (기본). 게임이 자체 비트맵 글꼴로 그림 → 글자 픽셀 완전 일치
 - "150_mabi"  4K, UI 150%, 마비옛체     → 치수 1.5배, 안티앨리어싱 글꼴 (같은 글자도 위치에 따라 모양이 조금씩 다름)
 - "150_nanum" 4K, UI 150%, 나눔고딕
+- "100_mabi"  UI 배율 조정 켬 + 100% + 마비옛체 → 크기는 기본과 같지만 글자가 작은 부드러운 글꼴.
+              시간 글자는 행 위치(세로 반 픽셀)마다 가장자리가 달라 흑백 모양 대신 밝기로 비교 (gray)
 
 치수는 전부 100% 기준 상수 × scale 로 쓴다 (px/area). scale=1.0 이면 기존 값과 정확히 같다.
 현재 변형은 프로세스 전역 하나 (앱이 설정을 읽을 때 set_screen). core 테스트 기본값은 "100".
@@ -21,12 +23,15 @@ class Screen:
     scale: float
     glyphs: Path          # 상태창 시간 글자
     fuzzy: bool           # True = ±1px 어긋남·여러 모양 허용 비교 (안티앨리어싱 글꼴)
+    gray: bool = False    # True = 시간 글자를 밝기 템플릿으로 비교 (glyphs = 밝기 글자 파일)
 
 
 SCREENS = {
     "100": Screen("100", "UI 크기 변경 없음", 1.0, ASSETS / "glyphs.json", False),
     "150_mabi": Screen("150_mabi", "4K · UI 150% · 마비옛체", 1.5, ASSETS / "screens" / "150_mabi" / "glyphs.json", True),
     "150_nanum": Screen("150_nanum", "4K · UI 150% · 나눔고딕", 1.5, ASSETS / "screens" / "150_nanum" / "glyphs.json", True),
+    "100_mabi": Screen("100_mabi", "UI 배율 조정 켬 · 100% · 마비옛체", 1.0, ASSETS / "screens" / "100_mabi" / "time_gray.json",
+                       False, gray=True),
 }
 DEFAULT = "100"
 BASE_PITCH = 24           # 100% 상태창 행 간격
@@ -60,6 +65,8 @@ def area(v: float) -> int:
 
 def boss_glyphs() -> Path:
     """보스 띠 라벨 글자. 100% 는 상태창과 같은 5×7 글자, 150% 는 변형 폴더의 boss_glyphs.json (부드러운 글꼴)."""
+    if _cur.gray:
+        return _cur.glyphs.parent / "boss_gray.json"       # 밝기 템플릿 (UI 배율 조정 100%)
     p = _cur.glyphs.parent / "boss_glyphs.json"
     return p if _cur.fuzzy else ASSETS / "glyphs.json"
 

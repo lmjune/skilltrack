@@ -54,7 +54,11 @@ class BossSession:
         self.verbose = verbose                    # 바를 못 찾는 이유 진단 출력 (콘솔 감시용)
         from core import screen
         sc = screen.current()
-        self.lib = GlyphLib.load(screen.boss_glyphs(), fuzzy=sc.fuzzy)    # 라벨 글자 (150% 는 부드러운 글꼴)
+        if sc.gray:                     # UI 배율 조정 100%: 라벨도 밝기 템플릿
+            from core.digits import GrayLib
+            self.lib = GrayLib.load(screen.boss_glyphs())
+        else:
+            self.lib = GlyphLib.load(screen.boss_glyphs(), fuzzy=sc.fuzzy)    # 라벨 글자 (150% 는 부드러운 글꼴)
         self.icons = IconLib(ICON_DIR)
         self.tracker = BossTracker(watches or [])
         self.saver = saver or FrameSaver(DIAG / "boss" / "auto", reasons=("newicon", "nostrip", "nopanel", "dropped", "manual"))

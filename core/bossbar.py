@@ -93,8 +93,16 @@ class Geom:
     gap: int                    # 테두리 없는 아이콘 판정 때 왼쪽 간격 폭
     icon_min_corr: float        # 12×12 로 줄여 비교할 때 같은 아이콘 기준
     icon_margin: float          # 2위와 이만큼은 차이 (0 = 안 봄)
-    scaled: bool                # 그림을 12×12 로 줄여 라이브러리와 비교하는가
+    scaled: bool                # 그림을 12×12 로 줄여 라이브러리와 비교하는가 (+ 반투명 패널: 칸은 항상 찾아 본다)
+    panel_edge: bool = False    # 띠 패널 판정: 패널 위 경계(바깥보다 확실히 어두워지는 행)로 본다 (UI 배율 조정 100%)
 
+
+# UI 배율 조정 켬 + 100% + 마비옛체 (4K 실측 5장, 글라스 기브넨): 아이콘 칸 크기·간격은 기본 100% 와 같지만
+#   '%' 가 부드러운 글꼴 (11×9, 이름 첫 행과 같은 행), 아이콘이 세로 반 픽셀 어긋나 섞여 그려진다 (같은 아이콘 상관 0.85~0.94,
+#   다른 아이콘 최대 0.61) → 150% 처럼 낮은 기준 + 2위와 차이. 패널은 반투명 띠 (위 경계 −50, 바깥 대비 0.6~0.66배).
+#   라벨 글자(4M, 40 …)도 부드러운 글꼴 → 밝기 템플릿 (assets/screens/100_mabi/boss_gray.json, 실측 165개).
+PCT_100_MABI = ['110000000', '011001100', '011001000', '011011000', '110110000', '100100000', '001101111', '011011001',
+                '010010001', '110011001', '000001111']
 
 GEOMS = {
     "100": Geom(tuple(PCT_MASKS), PCT_DY, NAME_W, ICON, INNER, 1, PITCH, STRIP_DY, STRIP_DX,
@@ -104,6 +112,9 @@ GEOMS = {
                      -41, 15, 0, 26, -21, 26, 390, 6,
                      # 12×12 로 줄이면 게임의 확대와 달라 같은 아이콘도 0.78~0.94, 2위(다른 아이콘)는 최대 0.61, 차이 최소 0.27
                      0.75, 0.25, True),
+    "100_mabi": Geom((("bold", np.array([[c == "1" for c in r] for r in PCT_100_MABI])),), 0, 498, ICON, INNER, 1, PITCH,
+                     -45, STRIP_DX, -28, LABEL_H, LABEL_DX, LABEL_W, -50, 17, 260, 4,
+                     0.78, 0.2, True, panel_edge=True),
 }
 
 
@@ -215,6 +226,10 @@ def has_strip_panel(region_bgr, anchor: Anchor) -> bool:
     row = region_bgr[y, x0:x1]
     if row.size == 0:
         return False
+    if g.panel_edge:
+        # 반투명 띠: 패널 첫 행이 바로 위 바깥(2행 위)보다 확실히 어둡다 (실측 0.60~0.66배)
+        m, above = float(np.median(row.max(axis=1))), float(np.median(region_bgr[y - 2, x0:x1].max(axis=1)))
+        return m < 0.75 * above
     if not g.scaled:
         return float((row.max(axis=1) < 40).mean()) >= 0.9
     # UI 150%: 위 테두리가 반투명이라 바닥이 밝으면 48 까지 밝아진다 (실측 19~48). 절대값 대신 '위 패널·아래 바보다 확실히 어두운가'
@@ -250,7 +265,15 @@ def _label_ok(region_bgr, x, ly, lib) -> bool:
     if not lab.size or int(_white(lab).sum()) < 5:
         return False
     glyphs = segment(lab)
-    return bool(glyphs) and all(lib.match(g.mask) is not None for g in glyphs) if lib is not None else bool(glyphs)
+    return bool(glyphs) and all(_label_char(lab, g, lib) is not None for g in glyphs) if lib is not None else bool(glyphs)
+
+
+def _label_char(label_img, g, lib):
+    """라벨 글자 하나. 밝기 템플릿 세트(UI 배율 조정 100%)면 밝기로, 아니면 흑백 모양으로."""
+    if getattr(lib, "gray", False):
+        from core.digits import _gray_band, gray_patch
+        return lib.match_patch(gray_patch(_gray_band(label_img), g))
+    return lib.match(g.mask)
 
 
 def _slot_score(region_bgr, x, y, ly, lib=None) -> float:
@@ -324,7 +347,7 @@ def read_label(label_img, lib: GlyphLib) -> tuple[str, int | None]:
     glyphs = segment(label_img)
     if not glyphs:
         return "", None
-    text = "".join(lib.match(g.mask) or "?" for g in glyphs)
+    text = "".join(_label_char(label_img, g, lib) or "?" for g in glyphs)
     if "?" in text:
         return text, None
     if text.endswith("M") and text[:-1].isdigit():

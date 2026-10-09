@@ -72,7 +72,7 @@ def _vertical_segments_per_col(gray, pct=90, lo=None, hi=None):
     return counts
 
 
-def _icon_band_candidates(gray, min_w=None, max_w=None, dip_tol=4):
+def _icon_band_candidates(gray, min_w=None, max_w=None, dip_tol=4, rel=0.5):
     """세로 선분 수가 최댓값의 50% 이상인 열들의 연속 구간들 (왼쪽부터). 각 후보는 이후 검증을 거친다.
     폭 범위는 100% 기준 8~24px (아이콘 16 + 테두리 여유). UI 150% 에선 아이콘이 24px 이라 배율을 곱한다."""
     min_w = screen.px(8) if min_w is None else min_w
@@ -80,7 +80,7 @@ def _icon_band_candidates(gray, min_w=None, max_w=None, dip_tol=4):
     runs = _vertical_segments_per_col(gray)
     if runs.max() < 3:
         return []
-    thr = runs.max() * 0.5
+    thr = runs.max() * rel
     W = len(runs)
     out, x = [], 0
     while x < W:
@@ -291,12 +291,37 @@ def _detect_with_band(gray, edge, strokes, band, debug=None):
 
 
 def detect_rows(img, debug=None) -> RowLayout | None:
-    """아이콘 열 후보를 왼쪽부터 시도해서 검증을 통과하는 첫 레이아웃."""
+    """아이콘 열 후보들로 레이아웃을 만들어 보고 줄이 가장 많이 잡힌 것."""
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY).astype(np.float32)
     edge = _edge(gray)
     strokes = any_stroke(img)
-    for band in _icon_band_candidates(gray):
+    # 후보 아이콘 열마다 레이아웃을 만들어 보고 줄이 가장 많이(섹션은 적게) 잡힌 것.
+    # (예전엔 처음 통과한 것: 부드러운 글꼴(UI 배율 조정 100%)에선 아이콘 열 일부만 걸친 후보도 통과해 한 줄을 놓쳤다)
+    found, tried = [], set()
+    def attempt(band):
+        if band in tried or band[1] > gray.shape[1]:
+            return
+        tried.add(band)
         L = _detect_with_band(gray, edge, strokes, band, debug)
         if L is not None:
-            return L
-    return None
+            found.append(L)
+    for band in _icon_band_candidates(gray):
+        attempt(band)
+    # 느슨하게 한 번 더: 부드러운 아이콘은 아이콘 안 세로 엣지가 적어 아이콘 열이 중간에 끊긴다
+    for band in _icon_band_candidates(gray, dip_tol=8, rel=0.4):
+        attempt(band)
+    # 아이콘 왼쪽 테두리(세로 선분 수가 최대인 열)에서 아이콘 폭(16~21px)으로 직접 잘라 본다
+    # (아이콘 옆 글자 열과 이어져 폭 제한 때문에 엉뚱한 곳이 잘리는 경우)
+    runs = _vertical_segments_per_col(gray)
+    if runs.max() >= 3:
+        edges = [int(x) for x in np.nonzero(runs >= 0.9 * runs.max())[0]][:3]
+        for x0 in edges:
+            for wid in range(screen.px(16), screen.px(21) + 1):
+                attempt((x0, x0 + wid))
+    if not found:
+        for x0 in sorted({b[0] for b in tried}):
+            for wid in range(screen.px(16), screen.px(21) + 1):
+                attempt((x0, x0 + wid))
+    if not found:
+        return None
+    return max(found, key=lambda L: (len(L.rows), -len(L.sections)))

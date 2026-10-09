@@ -390,8 +390,102 @@ class GlyphLib:
             self.add(c, g.mask)
 
 
+# ---------------------------------------------------------------- 회색조 글자 (UI 배율 조정 켬 + 100%)
+# 작은 부드러운 글꼴 (5×7 안팎): 같은 글자도 행 위치(세로 반 픽셀)에 따라 가장자리 밝기가 달라
+# 흑백 마스크로 자르면 모양이 매번 바뀐다 → 마스크 대신 밝기 그대로 비교 (±1px 어긋남 허용).
+# 빨간 글자(1분 미만)도 같은 모양: 채널 최대값을 밝기로 쓴다.
+# 실측 (4K, 상태창 198개 시간): 다른 행·다른 시각으로 배워 읽어도 전부 맞음. 같은 글자 거리 ≤0.12, 다른 글자 ≥1.5배
+GRAY_MAX = 0.3      # 이 거리 이하일 때만 인정
+GRAY_MARGIN = 1.3   # 두 번째로 가까운 다른 글자가 이 배수 이상 멀어야 인정
+
+
+def _gray_band(time_img) -> np.ndarray:
+    g = time_img.max(axis=2).astype(np.float32) / 255.0
+    rows = np.nonzero((g > 0.5).sum(1))[0]
+    return g[max(0, rows[0] - 1):rows[-1] + 2] if len(rows) else g
+
+
+def gray_patch(band: np.ndarray, g: Glyph) -> np.ndarray:
+    """글자 한 칸: 열은 글자 ±1, 행은 그 글자의 밝은 행 ±1 (글자마다 높이를 맞춰야 줄 전체 높이가 달라도 같은 비교)."""
+    cols = band[:, max(0, g.x0 - 1):g.x1 + 1]
+    rows = np.nonzero((cols > 0.5).any(axis=1))[0]
+    return cols[max(0, rows[0] - 1):rows[-1] + 2] if len(rows) else cols
+
+
+def _gray_dist(a: np.ndarray, b: np.ndarray) -> float:
+    H, W = max(a.shape[0], b.shape[0]) + 2, max(a.shape[1], b.shape[1]) + 2
+    A = np.zeros((H, W), np.float32); A[1:1 + a.shape[0], 1:1 + a.shape[1]] = a
+    best = 1e9
+    for dy in (-1, 0, 1):
+        for dx in (-1, 0, 1):
+            y, x = 1 + dy, 1 + dx
+            if y < 0 or x < 0 or y + b.shape[0] > H or x + b.shape[1] > W:
+                continue
+            B = np.zeros((H, W), np.float32); B[y:y + b.shape[0], x:x + b.shape[1]] = b
+            best = min(best, float(np.abs(A - B).sum()))
+    return best / max(1.0, float(a.sum() + b.sum()) / 2)
+
+
+class GrayLib:
+    """밝기 템플릿 글자 세트. read_time 이 GlyphLib 대신 받으면 이걸로 읽는다."""
+    fuzzy = False
+    gray = True
+
+    def __init__(self):
+        self.items: list[tuple[str, np.ndarray]] = []
+        self._cache: dict = {}
+
+    @classmethod
+    def load(cls, path):
+        lib = cls()
+        if Path(path).exists():
+            for d in json.loads(Path(path).read_text(encoding="utf-8")):
+                lib.items.append((d["label"], np.array(d["v"], np.float32) / 255.0))
+        return lib
+
+    def save(self, path):
+        data = [{"label": l, "v": np.round(m * 255).astype(int).tolist()} for l, m in self.items]
+        Path(path).write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+
+    def add(self, label, patch):
+        if not any(l == label and m.shape == patch.shape and float(np.abs(m - patch).max()) < 0.02 for l, m in self.items):
+            self.items.append((label, patch.copy())); self._cache.clear()
+
+    def match(self, mask):
+        return None                 # 마스크로는 안 읽음 (read_time 이 match_patch 로 먼저 채운다)
+
+    def max_width(self) -> int:
+        return max((m.shape[1] for _, m in self.items), default=0)
+
+    def match_patch(self, patch) -> str | None:
+        key = (patch.shape, np.round(patch * 32).astype(np.uint8).tobytes())
+        if key in self._cache:
+            return self._cache[key]
+        per = {}
+        for l, t in self.items:
+            if abs(t.shape[1] - patch.shape[1]) > 2:
+                continue
+            d = _gray_dist(patch, t)
+            if d < per.get(l, 1e9):
+                per[l] = d
+        out = None
+        if per:
+            r = sorted(per.items(), key=lambda kv: kv[1])
+            second = r[1][1] if len(r) > 1 else 1e9
+            if r[0][1] <= GRAY_MAX and second >= GRAY_MARGIN * max(r[0][1], 1e-3):
+                out = r[0][0]
+        if len(self._cache) > 5000:
+            self._cache.clear()
+        self._cache[key] = out
+        return out
+
+
 def read_time(time_img, lib: GlyphLib) -> TimeRead:
     glyphs = segment(time_img)
+    if getattr(lib, "gray", False):
+        band = _gray_band(time_img)
+        for g in glyphs:
+            g.label = lib.match_patch(gray_patch(band, g))
     if lib.fuzzy:                       # 안티앨리어싱 글꼴: 붙은 글자 쪼개기
         out = []
         for g in glyphs:

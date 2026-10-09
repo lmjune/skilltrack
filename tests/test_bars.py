@@ -125,3 +125,21 @@ def test_edge_levels_and_shield_only():
 def test_disabled_resource_silent():
     tr = BarTracker({"sp": BarCfg(enabled=False, pct=20)})
     assert run(tr, [10] * 8, key="sp") == [] and tr.edge_levels() == {}
+
+
+SOFT = {   # UI 배율 조정 켬 · 100% · 마비옛체 — 스태미나 테두리가 안쪽 색과 섞여 그려짐 (화면 숫자)
+    "soft100_qhd.png": (4576 / 5362, 5201 / 5889, 4258 / 5028),
+    "soft100_4k.png": (1706 / 6869, 3837 / 5288, 3444 / 4849),       # 생명력 경계가 숫자 밑
+}
+
+
+@pytest.mark.parametrize("name", sorted(SOFT))
+def test_soft_ui_100(name):
+    from core import screen
+    screen.set_screen("100_mabi")
+    try:
+        r = read_bars(cv2.imread(str(FIX / name)))
+    finally:
+        screen.set_screen("100")
+    for k, want in zip(("hp", "mp", "sp"), SOFT[name]):
+        assert r[k] is not None and abs(r[k] - want) < 0.015, (k, r[k], want)
