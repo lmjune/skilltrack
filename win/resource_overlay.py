@@ -23,7 +23,7 @@ class ResourceOverlay(EditableOverlay):
     def __init__(self, pos=(1500, 1000), width=300, row_h=44, font_pt=18):
         super().__init__()
         self._init_editable("자원 알림")
-        self.rows: list[tuple[str, int]] = []
+        self.rows: list[tuple[str, int, str]] = []      # (key, %, 이름)
         self.row_h = row_h
         self.font_ = QFont("Malgun Gothic", font_pt, QFont.Bold)
         self.setAttribute(Qt.WA_TranslucentBackground)
@@ -42,14 +42,14 @@ class ResourceOverlay(EditableOverlay):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
         self._paint_edit_frame(p)
-        rows = self.rows if self.rows or not self.edit_mode else [("hp", 25), ("mp", 18)]   # 편집 중엔 예시
+        rows = self.rows if self.rows or not self.edit_mode else [("hp", 25, "생명력"), ("mp", 18, "마나")]   # 편집 중엔 예시
         p.setFont(self.font_)
-        for i, (k, pct) in enumerate(rows):
+        for i, (k, pct, name) in enumerate(rows):
             r = QRectF(4, 4 + i * self.row_h, self.width() - 8, self.row_h - 6)
             bg = QColor(COLOR[k]); bg.setAlpha(215)
             p.setPen(Qt.NoPen); p.setBrush(bg); p.drawRoundedRect(r, 8, 8)
             p.setPen(QColor(255, 255, 255))
-            p.drawText(r.adjusted(14, 0, -10, 0), Qt.AlignVCenter | Qt.AlignLeft, f"{NAMES[k]} {pct}%")
+            p.drawText(r.adjusted(14, 0, -10, 0), Qt.AlignVCenter | Qt.AlignLeft, f"{name} {pct}%")
         p.end()
 
 

@@ -98,6 +98,7 @@ class BarCfg:
     edge: bool = True          # 화면 가장자리 효과
     sound: str = "none"        # voice | effect | none
     shield_only: bool = False  # (마나) 마나실드가 켜져 있을 때만 화면 효과
+    msg: str = ""              # 알림 문구 (비우면 "생명력 부족"). 글씨 칸엔 "문구 22%", 음성은 문구 그대로
 
 
 DEFAULTS = {
@@ -176,9 +177,18 @@ class BarTracker:
                 if s.low and self.cfgs.get(k) and self.cfgs[k].text and s.pct is not None]
 
 
-def event_text(e: BarEvent) -> str:
-    return f"{NAMES[e.key]} {e.pct}%"
+def default_msg(key) -> str:
+    return f"{NAMES[key]} 부족"
 
 
-def speech_text(e: BarEvent) -> str:
-    return f"{NAMES[e.key]} 부족"
+def label(key, cfg=None) -> str:
+    """글씨 칸·로그에 쓰는 이름: 직접 쓴 문구 또는 '생명력'."""
+    return (cfg.msg.strip() if cfg and cfg.msg.strip() else NAMES[key])
+
+
+def event_text(e: BarEvent, cfg=None) -> str:
+    return f"{label(e.key, cfg)} {e.pct}%"
+
+
+def speech_text(e: BarEvent, cfg=None) -> str:
+    return cfg.msg.strip() if cfg and cfg.msg.strip() else default_msg(e.key)

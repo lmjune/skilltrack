@@ -6,9 +6,9 @@
 from dataclasses import replace
 
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QCheckBox, QSpinBox, QPushButton,
-                               QFrame, QComboBox)
+                               QFrame, QComboBox, QLineEdit)
 
-from core.bars import NAMES, RELEASE
+from core.bars import NAMES, RELEASE, default_msg
 from core.paths import APP_NAME
 
 
@@ -23,7 +23,7 @@ class _Row(QFrame):
         self.setObjectName("card")
         v = QVBoxLayout(self); v.setContentsMargins(16, 10, 16, 10); v.setSpacing(6)
         top = QHBoxLayout(); top.setSpacing(8)
-        self.on = QCheckBox(NAMES[key]); self.on.setChecked(cfg.enabled); self.on.setStyleSheet("font-weight:700;"); self.on.setFixedWidth(96)
+        self.on = QCheckBox(NAMES[key]); self.on.setChecked(cfg.enabled); self.on.setStyleSheet("font-weight:700;"); self.on.setFixedWidth(116)
         top.addWidget(self.on)
         self.pct = QSpinBox(); self.pct.setRange(1, 95); self.pct.setSuffix("%"); self.pct.setFixedWidth(76); self.pct.setValue(cfg.pct)
         top.addWidget(self.pct); top.addWidget(QLabel("이하일 때"))
@@ -36,6 +36,11 @@ class _Row(QFrame):
         self.sound.setCurrentIndex(max(0, self.sound.findData(cfg.sound)))
         top.addWidget(self.sound); top.addStretch()
         v.addLayout(top)
+        mr = QHBoxLayout(); mr.setSpacing(8)
+        ml = QLabel("알림 문구"); ml.setFixedWidth(116); mr.addWidget(ml)
+        self.msg = QLineEdit(cfg.msg); self.msg.setPlaceholderText(default_msg(key))
+        self.msg.setToolTip("음성은 이 문구 그대로, 글씨 칸엔 '문구 22%'. 비우면 기본값")
+        mr.addWidget(self.msg, 1); v.addLayout(mr)
         self.shield = None
         if key == "mp":
             self.shield = QCheckBox("마나실드가 켜져 있을 때만 화면 효과 (꺼져 있으면 글씨만)")
@@ -46,13 +51,13 @@ class _Row(QFrame):
 
     def _enable(self, *_):
         on = self.on.isChecked()
-        for w in (self.pct, self.text, self.edge, self.sound, self.shield):
+        for w in (self.pct, self.text, self.edge, self.sound, self.shield, self.msg):
             if w is not None:
                 w.setEnabled(on)
 
     def cfg(self, old):
         return replace(old, enabled=self.on.isChecked(), pct=self.pct.value(), text=self.text.isChecked(),
-                       edge=self.edge.isChecked(), sound=self.sound.currentData() or "none",
+                       edge=self.edge.isChecked(), sound=self.sound.currentData() or "none", msg=self.msg.text().strip(),
                        shield_only=self.shield.isChecked() if self.shield is not None else old.shield_only)
 
 
@@ -60,7 +65,7 @@ class BarsWindow(QWidget):
     def __init__(self, app, prof):
         super().__init__()
         self.app, self.prof = app, prof
-        self.setWindowTitle(APP_NAME); self.resize(620, 560)
+        self.setWindowTitle(APP_NAME); self.resize(620, 640)
         root = QVBoxLayout(self); root.setContentsMargins(0, 0, 0, 0); root.setSpacing(0)
         body = QWidget(); v = QVBoxLayout(body); v.setContentsMargins(28, 24, 28, 16); v.setSpacing(10)
         t = QLabel(f"자원 알림 — {prof.name}"); t.setObjectName("title"); v.addWidget(t)
@@ -70,7 +75,7 @@ class BarsWindow(QWidget):
         self.rows = [_Row(k, prof.bars[k]) for k in ("hp", "mp", "sp")]
         for r in self.rows:
             v.addWidget(r)
-        v.addWidget(muted("음성: \"생명력 부족\", \"마나 부족\" — 생명력은 다른 소리를 끊고 가장 먼저 나옵니다 (일반 설정의 소리 켜기 필요)."))
+        v.addWidget(muted("음성은 알림 문구 그대로 (기본 \"생명력 부족\") — 생명력은 다른 소리를 끊고 가장 먼저 나옵니다 (일반 설정의 소리 켜기 필요)."))
 
         sec = QLabel("샘플 수집"); sec.setObjectName("section"); v.addWidget(sec)
         self.collect = QCheckBox("막대 숫자가 바뀔 때마다 실제 화면 저장 (색이 바뀌는 상태 확인용)")

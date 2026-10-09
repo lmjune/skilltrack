@@ -25,8 +25,19 @@ def _setup_logging():
         pass
 
 
+def _set_app_id():
+    """작업 표시줄이 이 프로그램을 python.exe 가 아닌 별도 앱으로 보게 → 창 아이콘이 작업 표시줄에 그대로 나온다
+    (안 하면 소스 실행 땐 파이썬 아이콘으로 묶임). 창을 만들기 전에 불러야 한다."""
+    try:
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("MabiAura.MabiAura")
+    except Exception:
+        pass
+
+
 if __name__ == "__main__":
     _setup_logging()
+    _set_app_id()
     from win.app import App
     try:
         sys.exit(App(sys.argv).exec())

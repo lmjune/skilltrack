@@ -566,6 +566,8 @@ class App:
         self.overlay.set_edit(False)
         if self.boss_ov:
             self.boss_ov.set_edit(False)
+        if self.res_ov:
+            self.res_ov.set_edit(False)
         for g in self._groups():
             g.set_edit(False)
         self.edit["bar"].close(); self.edit = None
@@ -738,13 +740,15 @@ class App:
         self._bars_last = ratios
         prof, g = self.cfg.profile(), self.cfg.general
         for e in self.bars_tr.update(ratios):
-            print(f"[{datetime.now():%H:%M:%S}] [자원] {speech_text(e)} ({e.pct}%)")
-            mode = prof.bars[e.key].sound
+            c = prof.bars[e.key]
+            print(f"[{datetime.now():%H:%M:%S}] [자원] {speech_text(e, c)} ({e.pct}%)")
+            mode = c.sound
             if g.sound and self.player and mode in ("voice", "effect"):
                 prio = P_BURST if e.key == "hp" else P_STATUS      # 생명력은 가장 먼저
-                self.player.say(Utterance(mode, speech_text(e), "danger", prio, time.time(), key=f"bar:{e.key}"))
+                self.player.say(Utterance(mode, speech_text(e, c), "danger", prio, time.time(), key=f"bar:{e.key}"))
         if self.res_ov:
-            self.res_ov.set_rows(self.bars_tr.text_rows())
+            from core.bars import label
+            self.res_ov.set_rows([(k, pct, label(k, prof.bars[k])) for k, pct in self.bars_tr.text_rows()])
         levels = self.bars_tr.edge_levels(self._mana_shield())
         if levels and self.edge_ov is None:
             from win.resource_overlay import EdgeOverlay
