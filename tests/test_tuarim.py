@@ -42,8 +42,14 @@ def feed(tr, seq):
 
 def test_soon_once_per_cycle_and_burst():
     tr = TuarimTracker(soon_pct=95)
-    seq = [(15, p) for p in range(90, 100)] + [(15, 0), (15, 1)] + [(15, p) for p in range(93, 97)]
-    assert feed(tr, seq) == ["곧 투아림 (약 30초)", "투아림!", "곧 투아림 (약 30초)"]
+    # 100% 되는 순간 "투아림!" (그 뒤 게이지가 빠질 때가 아니라). 빠진 뒤 다음 바퀴에 다시
+    seq = [(15, p) for p in range(90, 101)] + [(15, 60), (15, 0), (15, 1)] + [(15, p) for p in range(93, 101)]
+    assert feed(tr, seq) == ["곧 투아림 (약 30초)", "투아림!", "곧 투아림 (약 30초)", "투아림!"]
+
+
+def test_burst_not_said_when_started_at_100():
+    tr = TuarimTracker(soon_pct=95)
+    assert feed(tr, [(15, 100), (15, 100), (15, 0), (15, 99), (15, 100)]) == ["곧 투아림 (약 6초)", "투아림!"]
 
 
 def test_unstable_value_ignored():

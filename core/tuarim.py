@@ -147,7 +147,8 @@ class TuarimEvent:
 class TuarimTracker:
     """값 안정화(STABLE 프레임 연속) + 한 번씩만 알리기.
       - 곧 투아림: 부스트가 soon_pct 이상이 되는 순간 1회 (남은 초 = (100−%)×6). 투아림이 터져 %가 떨어지면 다시 준비
-      - 투아림!: 부스트가 높았다가(≥90) 낮아질 때 (터짐)
+      - 투아림!: 부스트가 100% 가 되는 순간 (게임에서 100% 즉시 발동). 예전엔 '높았다가 낮아질 때' 였는데
+        그건 투아림이 끝나고 게이지가 빠진 뒤라 50초쯤 늦었다. 다시 준비 = 부스트가 90% 아래로 내려갔을 때
       - 도르카 부족: dorca_low 이하로 떨어질 때 1회, 그 위로 올라오면 다시 준비. 0 이면 안 씀"""
     soon_pct: int = 95
     dorca_low: int = 0
@@ -157,7 +158,7 @@ class TuarimTracker:
     _cand: dict = field(default_factory=dict)      # 이름 → (값, 연속 횟수)
     _soon_done: bool = False
     _low_done: bool = False
-    _pct_peak: int = 0
+    _burst_done: bool = False
 
     def _stable(self, name, v):
         if v is None:
@@ -174,10 +175,12 @@ class TuarimTracker:
         p = self._stable("pct", r.pct)
         if p is not None and p != self.pct:
             prev, self.pct = self.pct, p
-            if prev is not None and self._pct_peak >= 90 and p <= 10:
-                ev.append(TuarimEvent("burst"))          # 터짐 → 다음 바퀴 준비
-                self._soon_done = False; self._pct_peak = 0
-            self._pct_peak = max(self._pct_peak, p) if p > 10 else self._pct_peak
+            if p >= 100:
+                if prev is not None and not self._burst_done:
+                    ev.append(TuarimEvent("burst"))      # 100% = 발동 (켤 때 이미 100% 면 말하지 않음)
+                self._burst_done = True
+            elif p < 90:
+                self._burst_done = False                 # 게이지가 빠졌으면 다음 바퀴 준비
             if p < self.soon_pct - 5:
                 self._soon_done = False                  # 많이 내려갔으면 (투아림을 못 보고 지나간 경우 등) 다시 준비
             if self.soon_pct and p >= self.soon_pct and not self._soon_done and p < 100:
