@@ -15,6 +15,8 @@ from core import screen
 from core.strokes import stroke_masks
 
 ON_RATIO = 0.85
+WHITE_SDR = 185          # HDR 꺼짐 (screen.soft_sdr) 켜짐 기준
+GRAY_SDR = (60, 160)     # HDR 꺼짐 꺼짐 범위 (꺼진 글자 속 ~127)
 
 
 @dataclass
@@ -54,12 +56,15 @@ def make_site(frame, text_rect, name_range) -> NameSite:
         cut = _suffix_start(sub, white | gray)
         if cut is not None:                   # 연장 접미어가 붙은 채로 캘리브레이션 → 기본 이름까지만 자리로
             sub, white, gray = sub[:, :cut], white[:, :cut], gray[:, :cut]
-    if screen.current().fuzzy and gray.any():
+    if (screen.current().fuzzy or screen.soft_sdr()) and gray.any():
         # 안티앨리어싱 글꼴: 회색 글자 가장자리는 배경과 섞인 중간 밝기라, 글자가 흰색으로 바뀌어도 250 이 안 된다
         # → 활성 판정이 84% 에서 멈춰 '모름'. 완전히 덮인 픽셀(회색 최댓값 근처)만 자리로 쓴다.
         #   실측: 185px → 38px, 회색 100%/흰색 100% 로 깔끔하게 갈림
         mn = sub.min(axis=2).astype(np.int16)
         gray = gray & (mn >= int(mn[gray].max()) - 10)
+    if screen.soft_sdr() and white.sum() >= max(8, gray.sum() * 0.5):
+        # HDR 꺼짐: 켜진 글자의 가장자리(160~185)가 회색 후보로 잡혀 자리에 섞이면 켜짐 비율이 78% 에서 멈춘다 → 흰 획만
+        gray = np.zeros_like(gray)
     return NameSite(int(x + a), int(y), white | gray)
 
 
@@ -101,8 +106,13 @@ def read_site(frame, site: NameSite) -> Reading:
         return Reading("unknown", 0.0, 0.0, 0)
     mx, mn = px.max(axis=1), px.min(axis=1)
     neutral = (mx - mn) <= 12
-    white = float((mn >= 250).mean())
-    gray = float((neutral & (mn >= 100) & (mn <= 220)).mean())
+    if screen.soft_sdr():
+        # HDR 꺼짐 + 부드러운 글꼴: 켜진 글자 속 185~255, 꺼진 글자 ~127 (가장자리는 더 어둡다)
+        white = float((mn >= WHITE_SDR).mean())
+        gray = float((neutral & (mn >= GRAY_SDR[0]) & (mn <= GRAY_SDR[1])).mean())
+    else:
+        white = float((mn >= 250).mean())
+        gray = float((neutral & (mn >= 100) & (mn <= 220)).mean())
     state = "on" if white >= ON_RATIO else "off" if gray >= ON_RATIO else "unknown"
     if state == "on" and _flat_white(sub, site.mask):
         state = "unknown"           # 화면이 하얗게 된 순간: 꺼진 회색 글자도 255 가 된다 → '켜짐'이 아님

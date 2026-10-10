@@ -37,12 +37,49 @@ DEFAULT = "100"
 BASE_PITCH = 24           # 100% 상태창 행 간격
 
 _cur = SCREENS[DEFAULT]
+_hdr = True               # 윈도우 HDR 켜짐. 부드러운 글꼴 변형은 HDR 이 꺼지면 글자 밝기가 달라 기준을 바꾼다 (soft_sdr)
 
 
 def set_screen(key: str) -> Screen:
     global _cur
     _cur = SCREENS.get(key, SCREENS[DEFAULT])
     return _cur
+
+
+def set_hdr(on: bool) -> None:
+    """윈도우 HDR 상태 (앱이 시작할 때·설정 바꿀 때). HDR 이 켜지면 캡처가 밝아져 글자가 255 로 꽉 찬다."""
+    global _hdr
+    _hdr = bool(on)
+
+
+def hdr() -> bool:
+    return _hdr
+
+
+def soft_sdr() -> bool:
+    """부드러운 글꼴(UI 150%·UI 배율 조정 100%) + HDR 꺼짐.
+    HDR 이 꺼지면 켜진 글자가 255 가 아니라 200~250 (가장자리 섞임), 꺼진 글자는 209 가 아니라 127.
+    기본 UI(비트맵 글꼴)는 HDR 과 무관하게 255 / 127·209 라 해당 없음."""
+    return not _hdr and (_cur.fuzzy or _cur.gray)
+
+
+class as_hdr:
+    """with screen.as_hdr(): HDR 기준으로 잠깐 판정 (밝기를 키운 HDR 꺼짐 이미지를 기존 HDR 글자 세트로 읽을 때)."""
+    def __enter__(self):
+        global _hdr
+        self._old, _hdr = _hdr, True
+
+    def __exit__(self, *a):
+        global _hdr
+        _hdr = self._old
+
+
+def sdr_glyphs() -> Path | None:
+    """HDR 꺼짐용 시간 글자 (밝기 템플릿, 열 끊김으로 나눔). 없으면 None."""
+    if not (_cur.fuzzy or _cur.gray):
+        return None
+    p = _cur.glyphs.parent / "time_sdr.json"
+    return p if p.exists() else None
 
 
 def current() -> Screen:

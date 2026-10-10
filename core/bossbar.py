@@ -95,6 +95,7 @@ class Geom:
     icon_margin: float          # 2위와 이만큼은 차이 (0 = 안 봄)
     scaled: bool                # 그림을 12×12 로 줄여 라이브러리와 비교하는가 (+ 반투명 패널: 칸은 항상 찾아 본다)
     panel_edge: bool = False    # 띠 패널 판정: 패널 위 경계(바깥보다 확실히 어두워지는 행)로 본다 (UI 배율 조정 100%)
+    pct_sdr: tuple = ()         # HDR 꺼짐 '%': ((style, 켜진 마스크, 보는 자리 마스크), ...) — 가장자리 섞인 픽셀은 안 본다
 
 
 # UI 배율 조정 켬 + 100% + 마비옛체 (4K 실측 5장, 글라스 기브넨): 아이콘 칸 크기·간격은 기본 100% 와 같지만
@@ -104,6 +105,22 @@ class Geom:
 PCT_100_MABI = ['110000000', '011001100', '011001000', '011011000', '110110000', '100100000', '001101111', '011011001',
                 '010010001', '110011001', '000001111']
 
+# HDR 꺼짐 (screen.soft_sdr): 글자가 255 로 꽉 차지 않고 가장자리가 바 색과 섞인다. '%' 는 최소 채널 ≥ WHITE_SDR 로 보고,
+#   '1' = 켜짐(실측 ≥180), '0' = 꺼짐(≤110), '.' = 섞인 가장자리(안 봄). 실측 4K: 100% 3장, 150% 3장 (글라스 기브넨, 바 위 보라/파랑)
+WHITE_SDR = 150
+NAME_WHITE_SDR = 220        # 이름 해시용: 바 색이 바뀌어도(체력 감소) 변하지 않는 글자 속만
+PCT_SDR_100_MABI = ['110000000', '01.001100', '0.10.1000', '01101.000', '110110000', '.0.1.0000', '00110111.', '0.101.001',
+                    '01.01.001', '11001.001', '.000.1111']
+PCT_SDR_150_MABI = ['.1111100000000000', '11..1110000.1.000', '1100011000.11.000', '1.00011.0011.0000', '1.00011.0.1100000',
+                    '11000110.11.00000', '111.11.011.000000', '01111.0.110000000', '000000011.0....00', '0000001110.111110',
+                    '00000.11..11...11', '0000011.0.1.00011', '0000.1100.1.00011', '000.11.00.1.00011', '00011.000.1100.11',
+                    '000.100000111111.', '00000000000.111.0']
+
+
+def _care(rows):
+    return ("bold", np.array([[c == "1" for c in r] for r in rows]), np.array([[c != "." for c in r] for r in rows]))
+
+
 GEOMS = {
     "100": Geom(tuple(PCT_MASKS), PCT_DY, NAME_W, ICON, INNER, 1, PITCH, STRIP_DY, STRIP_DX,
                 LABEL_DY, LABEL_H, LABEL_DX, LABEL_W, -14, 17, 260, 4,
@@ -111,10 +128,10 @@ GEOMS = {
     "150_mabi": Geom((("bold", np.array([[c == "1" for c in r] for r in PCT_150_MABI])),), 1, 750, 20, 18, 1, 27, -67, -5,
                      -41, 15, 0, 26, -21, 26, 390, 6,
                      # 12×12 로 줄이면 게임의 확대와 달라 같은 아이콘도 0.78~0.94, 2위(다른 아이콘)는 최대 0.61, 차이 최소 0.27
-                     0.75, 0.25, True),
+                     0.75, 0.25, True, pct_sdr=(_care(PCT_SDR_150_MABI),)),
     "100_mabi": Geom((("bold", np.array([[c == "1" for c in r] for r in PCT_100_MABI])),), 0, 498, ICON, INNER, 1, PITCH,
                      -45, STRIP_DX, -28, LABEL_H, LABEL_DX, LABEL_W, -50, 17, 260, 4,
-                     0.78, 0.2, True, panel_edge=True),
+                     0.78, 0.2, True, panel_edge=True, pct_sdr=(_care(PCT_SDR_100_MABI),)),
 }
 
 
@@ -159,8 +176,10 @@ class BarRead:
 
 
 # ---------------------------------------------------------------- 바 찾기
-def _white(bgr):
-    return bgr.min(axis=2) >= WHITE_MIN
+def _white(bgr, thr=None):
+    if thr is None:
+        thr = WHITE_SDR if screen.soft_sdr() else WHITE_MIN
+    return bgr.min(axis=2) >= thr
 
 
 def find_bar(region_bgr, search=None) -> Anchor | None:
@@ -181,12 +200,18 @@ def find_bar_diag(region_bgr, search=None):
         w = w[y:y + hh, x:x + ww]; ox, oy = x, y
     w = np.ascontiguousarray(w)
     best = None
-    for style, mask in g.pct_masks:
+    sdr = screen.soft_sdr() and g.pct_sdr
+    for style, mask, care in (g.pct_sdr if sdr else [(st, m, None) for st, m in g.pct_masks]):
         th, tw = mask.shape
         if w.shape[0] < th or w.shape[1] < tw:
             continue
-        # 정확 일치 = 차이 픽셀 수. SQDIFF on 0/1 images == 다른 픽셀 수
-        res = cv2.matchTemplate(w, mask.astype(np.uint8), cv2.TM_SQDIFF)
+        # 정확 일치 = 차이 픽셀 수. SQDIFF on 0/1 images == 다른 픽셀 수 (care: 보는 자리만)
+        if care is not None:
+            res = cv2.matchTemplate(w.astype(np.float32), mask.astype(np.float32), cv2.TM_SQDIFF,
+                                    mask=care.astype(np.float32))
+            res = np.rint(res)
+        else:
+            res = cv2.matchTemplate(w, mask.astype(np.uint8), cv2.TM_SQDIFF)
         _, _, loc, _ = cv2.minMaxLoc(res)
         y0, x0 = loc[1], loc[0]
         diff = int(res[y0, x0])
@@ -208,7 +233,8 @@ def name_key(region_bgr, anchor: Anchor) -> str:
     import hashlib
     g = geom() or GEOMS["100"]
     x0 = max(0, anchor.text_x - 8)
-    m = _white(region_bgr[anchor.text_y:anchor.text_y + g.name_rows, x0:x0 + g.name_cols])
+    m = _white(region_bgr[anchor.text_y:anchor.text_y + g.name_rows, x0:x0 + g.name_cols],
+               NAME_WHITE_SDR if screen.soft_sdr() else None)
     return hashlib.sha1(np.packbits(m).tobytes()).hexdigest()[:12]
 
 
@@ -258,10 +284,25 @@ def _has_content(icon):
     return float(icon.reshape(-1, 3).astype(np.float32).std(axis=0).max()) > 12
 
 
+LABEL_GAIN_SDR = 1.6        # HDR 꺼짐: 라벨을 이만큼 밝게(255 에서 잘림) 하면 HDR 화면과 같은 모양 → 기존 글자 세트로 읽는다
+                            # 실측 4K 6장 (100%·150% 마비옛체): 1.4~2.0 모두 같은 결과, 1.2 는 일부 '?'
+
+
+def _sdr_gain(img):
+    return np.clip(img.astype(np.float32) * LABEL_GAIN_SDR, 0, 255).astype(np.uint8)
+
+
 def _label_ok(region_bgr, x, ly, lib) -> bool:
     """아래에 읽히는 라벨(숫자/M)이 있는가. 흰 픽셀 수만 세면 흰 얼음 바닥에서 오검출 → 글자 매칭까지 요구."""
     g = geom() or GEOMS["100"]
     lab = region_bgr[ly:ly + g.label_h, x + g.label_dx:x + g.label_dx + g.label_w]
+    if screen.soft_sdr() and lab.size:
+        with screen.as_hdr():
+            return _label_ok_img(_sdr_gain(lab), lib)
+    return _label_ok_img(lab, lib)
+
+
+def _label_ok_img(lab, lib) -> bool:
     if not lab.size or int(_white(lab).sum()) < 5:
         return False
     glyphs = segment(lab)
@@ -344,6 +385,13 @@ def find_slots(region_bgr, anchor: Anchor, lib: GlyphLib | None = None) -> list[
 # ---------------------------------------------------------------- 라벨
 def read_label(label_img, lib: GlyphLib) -> tuple[str, int | None]:
     """'4M' → 240, '40' → 40, '' → None(라벨 없음), '?…' → None(모르는 글자)."""
+    if screen.soft_sdr() and label_img.size:
+        with screen.as_hdr():
+            return _read_label(_sdr_gain(label_img), lib)
+    return _read_label(label_img, lib)
+
+
+def _read_label(label_img, lib) -> tuple[str, int | None]:
     glyphs = segment(label_img)
     if not glyphs:
         return "", None
@@ -408,25 +456,37 @@ class IconLib:
     def match(self, icon) -> tuple[str | None, float]:
         """(id, 유사도). 밝기에 무관 (만료 직전엔 아이콘이 어둡게/밝게 깜빡인다)."""
         a = self._norm(icon)
-        best, best_c, second = None, -1.0, -1.0
+        best, best_c, second, second_k = None, -1.0, -1.0, None
         for k, bank in self._bank().items():
             c = float((bank @ a).max())
             if c > best_c:
-                best, best_c, second = k, c, best_c
+                best, best_c, second, second_k = k, c, best_c, best
             elif c > second:
-                second = c
+                second, second_k = c, k
         if best is None:
             return None, best_c
         g = geom() or GEOMS["100"]
         if g.scaled:          # UI 150%: 줄인 그림이라 기준을 낮추되 2위와의 차이로 확인
             if best_c >= g.icon_min_corr and best_c - second >= g.icon_margin:
                 return best, best_c
+            # 모양이 거의 같고 색만 다른 짝 (브류 파랑 X 검 / 프라 노랑 X 검: 상관 차이 0.11~0.15) → 평균 색으로 가른다
+            if best_c >= g.icon_min_corr and best_c - second >= 0.05 and second_k is not None:
+                d1, d2 = self._chroma_d(icon, best), self._chroma_d(icon, second_k)
+                if d1 <= 0.15 and d2 >= 3 * d1 + 0.2:
+                    return best, best_c
             return None, best_c
         if best_c >= (ICON_MIN_CORR_STACK if self.is_stack(best) else ICON_MIN_CORR):
             return best, best_c
         if int(icon.max()) < FADE_MAX and best_c >= ICON_MIN_CORR_DIM and best_c - second >= 0.05:
             return best, best_c
         return None, best_c
+
+    def _chroma_d(self, icon, k) -> float:
+        """평균 색 (밝기로 나눈 B,G,R 비) 차이. 같은 아이콘 ≤0.02, 브류↔프라 0.75 (실측 HDR 꺼짐 4K)."""
+        def ch(x):
+            a = x.reshape(-1, 3).astype(np.float32).mean(axis=0)
+            return a / max(1.0, float(a.mean()))
+        return float(np.abs(ch(icon) - ch(self.items[k])).sum())
 
     def is_stack(self, k) -> bool:
         return "stack" in (self.meta.get(k) or {}).get("tags", [])

@@ -11,6 +11,7 @@
 """
 from dataclasses import dataclass, field
 import json
+import re
 from pathlib import Path
 import numpy as np
 
@@ -426,25 +427,64 @@ def _gray_dist(a: np.ndarray, b: np.ndarray) -> float:
     return best / max(1.0, float(a.sum() + b.sum()) / 2)
 
 
+BRIGHT_THR = 110      # HDR 꺼짐 시간 글자: 최대 채널이 이 이상인 열을 글자로 (흰·빨강 모두)
+BRIGHT_ROW = 0.43     # 글자 패치의 행 범위: 이 밝기를 넘는 행 ±1
+
+
+def bright_segments(time_img, thr=BRIGHT_THR, minpx=2) -> list[tuple[int, int]]:
+    """HDR 꺼짐 + 부드러운 글꼴: 획 마스크(255 기준)가 비어 글자를 못 나눈다. 밝은 열의 끊김으로 나눈다.
+    시간 칸은 어두운 외곽선 사이라 글자 사이 열은 어둡다 (실측 4K 마비옛체·나눔 100%/150%)."""
+    m = time_img.max(axis=2) >= thr
+    cols = m.any(axis=0)
+    out, x = [], 0
+    while x < len(cols):
+        if not cols[x]:
+            x += 1; continue
+        a = x
+        while x < len(cols) and cols[x]:
+            x += 1
+        if int(m[:, a:x].sum()) >= minpx:
+            out.append((a, x))
+    return out
+
+
+def bright_patch(time_img, a, b) -> np.ndarray:
+    """글자 한 칸 밝기 (최대 채널). 바탕 밝기(시간 칸 하위 40%)를 빼서 붉은 이펙트 바탕 위 글자도 같은 모양으로."""
+    g = time_img.max(axis=2).astype(np.float32) / 255.0
+    bg = float(np.percentile(g, 40))
+    g = np.clip((g - bg) / max(0.2, 1.0 - bg), 0.0, 1.0)
+    cols = g[:, max(0, a - 1):b + 1]
+    rr = np.nonzero((cols > BRIGHT_ROW).any(axis=1))[0]
+    return cols[max(0, rr[0] - 1):rr[-1] + 2] if len(rr) else cols
+
+
 class GrayLib:
-    """밝기 템플릿 글자 세트. read_time 이 GlyphLib 대신 받으면 이걸로 읽는다."""
+    """밝기 템플릿 글자 세트. read_time 이 GlyphLib 대신 받으면 이걸로 읽는다.
+    mode "band": 획 마스크로 나누고 밝기로 비교 (UI 배율 조정 100%, HDR).
+    mode "bright": 밝은 열 끊김으로 나누고 비교 (부드러운 글꼴 + HDR 꺼짐, time_sdr.json)."""
     fuzzy = False
     gray = True
 
-    def __init__(self):
+    def __init__(self, mode="band"):
         self.items: list[tuple[str, np.ndarray]] = []
+        self.mode = mode
         self._cache: dict = {}
 
     @classmethod
     def load(cls, path):
         lib = cls()
         if Path(path).exists():
-            for d in json.loads(Path(path).read_text(encoding="utf-8")):
+            data = json.loads(Path(path).read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                lib.mode = data.get("mode", "band"); data = data["items"]
+            for d in data:
                 lib.items.append((d["label"], np.array(d["v"], np.float32) / 255.0))
         return lib
 
     def save(self, path):
         data = [{"label": l, "v": np.round(m * 255).astype(int).tolist()} for l, m in self.items]
+        if self.mode != "band":
+            data = {"mode": self.mode, "items": data}
         Path(path).write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
 
     def add(self, label, patch):
@@ -458,6 +498,10 @@ class GrayLib:
         return max((m.shape[1] for _, m in self.items), default=0)
 
     def match_patch(self, patch) -> str | None:
+        return self.match_patch_d(patch)[0]
+
+    def match_patch_d(self, patch) -> tuple[str | None, float]:
+        """(글자, 거리). 인정 못 하면 (None, 거리)."""
         key = (patch.shape, np.round(patch * 32).astype(np.uint8).tobytes())
         if key in self._cache:
             return self._cache[key]
@@ -468,21 +512,47 @@ class GrayLib:
             d = _gray_dist(patch, t)
             if d < per.get(l, 1e9):
                 per[l] = d
-        out = None
+        out = (None, 1e9)
         if per:
             r = sorted(per.items(), key=lambda kv: kv[1])
             second = r[1][1] if len(r) > 1 else 1e9
-            if r[0][1] <= GRAY_MAX and second >= GRAY_MARGIN * max(r[0][1], 1e-3):
-                out = r[0][0]
+            out = (r[0][0] if r[0][1] <= GRAY_MAX and second >= GRAY_MARGIN * max(r[0][1], 1e-3) else None, r[0][1])
         if len(self._cache) > 5000:
             self._cache.clear()
         self._cache[key] = out
         return out
 
 
+_TIME_RE = re.compile(r"(\d{1,3}분)?(\d{1,2}초)?")
+
+
+def _split_bright(time_img, a, b, lib) -> list | None:
+    """붙어 나온 두 글자 (UI 150% 마비옛체 '47', '41' 은 사이 열이 안 어둡다). 양쪽 다 읽히는 자르기 중 가장 가까운 것."""
+    mw = lib.max_width()
+    if b - a < 6 or b - a > 2 * mw + 2:
+        return None
+    best = None
+    for c in range(a + 3, b - 2):
+        l1, d1 = lib.match_patch_d(bright_patch(time_img, a, c))
+        if l1 is None:
+            continue
+        l2, d2 = lib.match_patch_d(bright_patch(time_img, c, b))
+        if l2 is not None and (best is None or d1 + d2 < best[0]):
+            best = (d1 + d2, [(a, c, l1), (c, b, l2)])
+    return best[1] if best else None
+
+
 def read_time(time_img, lib: GlyphLib) -> TimeRead:
-    glyphs = segment(time_img)
-    if getattr(lib, "gray", False):
+    if getattr(lib, "mode", None) == "bright":
+        glyphs = []
+        for a, b in bright_segments(time_img):
+            lab = lib.match_patch(bright_patch(time_img, a, b))
+            parts = None if lab is not None else _split_bright(time_img, a, b, lib)
+            for a_, b_, l_ in parts or [(a, b, lab)]:
+                glyphs.append(Glyph(a_, b_, time_img[:, a_:b_].max(axis=2) >= BRIGHT_THR, l_))
+    else:
+        glyphs = segment(time_img)
+    if getattr(lib, "gray", False) and getattr(lib, "mode", None) != "bright":
         band = _gray_band(time_img)
         for g in glyphs:
             g.label = lib.match_patch(gray_patch(band, g))
@@ -521,6 +591,6 @@ def read_time(time_img, lib: GlyphLib) -> TimeRead:
             seconds = int(num or 0); num = ""
         else:
             return TimeRead(None, text, [])
-    if num:  # 단위 없이 끝난 숫자 → 해석 불가
+    if num or not _TIME_RE.fullmatch(text):  # 단위 없이 끝난 숫자, '1초초' 같은 순서 → 해석 불가
         return TimeRead(None, text, [])
     return TimeRead(minutes * 60 + seconds, text, [])

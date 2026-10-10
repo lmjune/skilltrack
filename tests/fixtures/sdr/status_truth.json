@@ -1,0 +1,1027 @@
+{
+ "100_mabi": {
+  "base": "100_mabi_0.png",
+  "frames": {
+   "100_mabi_0.png": {
+    "0": [
+     false,
+     null
+    ],
+    "1": [
+     true,
+     null
+    ],
+    "2": [
+     true,
+     "37초"
+    ],
+    "3": [
+     true,
+     "1분4초"
+    ],
+    "4": [
+     false,
+     null
+    ],
+    "5": [
+     true,
+     null
+    ],
+    "6": [
+     true,
+     "3분2초"
+    ],
+    "7": [
+     false,
+     null
+    ],
+    "8": [
+     false,
+     null
+    ],
+    "9": [
+     false,
+     null
+    ],
+    "10": [
+     false,
+     null
+    ],
+    "11": [
+     false,
+     null
+    ],
+    "12": [
+     true,
+     "10초"
+    ],
+    "13": [
+     true,
+     "1분4초"
+    ],
+    "14": [
+     true,
+     "1분22초"
+    ],
+    "15": [
+     true,
+     "1분23초"
+    ],
+    "16": [
+     true,
+     "1분24초"
+    ],
+    "17": [
+     true,
+     "3분2초"
+    ],
+    "18": [
+     true,
+     "3분2초"
+    ],
+    "19": [
+     true,
+     null
+    ],
+    "20": [
+     true,
+     null
+    ]
+   },
+   "100_mabi_1.png": {
+    "0": [
+     false,
+     null
+    ],
+    "1": [
+     true,
+     null
+    ],
+    "2": [
+     true,
+     "30초"
+    ],
+    "3": [
+     true,
+     "57초"
+    ],
+    "4": [
+     false,
+     null
+    ],
+    "5": [
+     true,
+     null
+    ],
+    "6": [
+     true,
+     "2분55초"
+    ],
+    "7": [
+     false,
+     null
+    ],
+    "8": [
+     false,
+     null
+    ],
+    "9": [
+     false,
+     null
+    ],
+    "10": [
+     false,
+     null
+    ],
+    "11": [
+     false,
+     null
+    ],
+    "12": [
+     true,
+     "3초"
+    ],
+    "13": [
+     true,
+     "57초"
+    ],
+    "14": [
+     true,
+     "1분15초"
+    ],
+    "15": [
+     true,
+     "1분16초"
+    ],
+    "16": [
+     true,
+     "1분16초"
+    ],
+    "17": [
+     true,
+     "2분55초"
+    ],
+    "18": [
+     true,
+     "2분55초"
+    ],
+    "19": [
+     true,
+     null
+    ],
+    "20": [
+     true,
+     null
+    ]
+   },
+   "100_mabi_2.png": {
+    "0": [
+     false,
+     null
+    ],
+    "1": [
+     true,
+     null
+    ],
+    "2": [
+     true,
+     "5초"
+    ],
+    "3": [
+     true,
+     "32초"
+    ],
+    "4": [
+     false,
+     null
+    ],
+    "5": [
+     true,
+     null
+    ],
+    "6": [
+     true,
+     "2분30초"
+    ],
+    "7": [
+     false,
+     null
+    ],
+    "8": [
+     false,
+     null
+    ],
+    "9": [
+     false,
+     null
+    ],
+    "10": [
+     false,
+     null
+    ],
+    "11": [
+     false,
+     null
+    ],
+    "12": [
+     true,
+     "17초"
+    ],
+    "13": [
+     true,
+     "32초"
+    ],
+    "14": [
+     true,
+     "50초"
+    ],
+    "15": [
+     true,
+     "51초"
+    ],
+    "16": [
+     true,
+     "51초"
+    ],
+    "17": [
+     true,
+     "2분30초"
+    ],
+    "18": [
+     true,
+     "2분30초"
+    ],
+    "19": [
+     true,
+     null
+    ],
+    "20": [
+     true,
+     null
+    ]
+   },
+   "100_mabi_3.png": {
+    "0": [
+     false,
+     null
+    ],
+    "1": [
+     true,
+     null
+    ],
+    "2": [
+     false,
+     null
+    ],
+    "3": [
+     true,
+     "6초"
+    ],
+    "4": [
+     false,
+     null
+    ],
+    "5": [
+     true,
+     null
+    ],
+    "6": [
+     true,
+     "2분5초"
+    ],
+    "7": [
+     false,
+     null
+    ],
+    "8": [
+     false,
+     null
+    ],
+    "9": [
+     false,
+     null
+    ],
+    "10": [
+     false,
+     null
+    ],
+    "11": [
+     false,
+     null
+    ],
+    "12": [
+     true,
+     "6초"
+    ],
+    "13": [
+     true,
+     "25초"
+    ],
+    "14": [
+     true,
+     "26초"
+    ],
+    "15": [
+     true,
+     "26초"
+    ],
+    "16": [
+     true,
+     "2분5초"
+    ],
+    "17": [
+     true,
+     "2분5초"
+    ],
+    "18": [
+     true,
+     null
+    ],
+    "19": [
+     true,
+     null
+    ],
+    "20": [
+     false,
+     null
+    ]
+   },
+   "100_mabi_4.png": {
+    "0": [
+     false,
+     null
+    ],
+    "1": [
+     true,
+     null
+    ],
+    "2": [
+     false,
+     null
+    ],
+    "3": [
+     false,
+     null
+    ],
+    "4": [
+     false,
+     null
+    ],
+    "5": [
+     true,
+     null
+    ],
+    "6": [
+     true,
+     "1분47초"
+    ],
+    "7": [
+     false,
+     null
+    ],
+    "8": [
+     false,
+     null
+    ],
+    "9": [
+     false,
+     null
+    ],
+    "10": [
+     false,
+     null
+    ],
+    "11": [
+     false,
+     null
+    ],
+    "12": [
+     true,
+     "7초"
+    ],
+    "13": [
+     true,
+     "8초"
+    ],
+    "14": [
+     true,
+     "8초"
+    ],
+    "15": [
+     true,
+     "1분47초"
+    ],
+    "16": [
+     true,
+     "1분47초"
+    ],
+    "17": [
+     true,
+     null
+    ],
+    "18": [
+     true,
+     null
+    ],
+    "19": [
+     false,
+     null
+    ],
+    "20": [
+     false,
+     null
+    ]
+   }
+  }
+ },
+ "150_mabi": {
+  "base": "150_mabi_0.png",
+  "frames": {
+   "150_mabi_0.png": {
+    "0": [
+     true,
+     "1분10초"
+    ],
+    "1": [
+     true,
+     "8초"
+    ],
+    "2": [
+     true,
+     "2분14초"
+    ],
+    "3": [
+     false,
+     null
+    ],
+    "4": [
+     false,
+     null
+    ],
+    "5": [
+     false,
+     null
+    ],
+    "6": [
+     true,
+     "2분14초"
+    ],
+    "7": [
+     false,
+     null
+    ],
+    "8": [
+     false,
+     null
+    ],
+    "9": [
+     true,
+     "8초"
+    ],
+    "10": [
+     true,
+     "18초"
+    ],
+    "11": [
+     true,
+     "2분14초"
+    ],
+    "12": [
+     true,
+     "2분14초"
+    ],
+    "13": [
+     true,
+     null
+    ]
+   },
+   "150_mabi_1.png": {
+    "0": [
+     true,
+     "1분3초"
+    ],
+    "1": [
+     true,
+     "1초"
+    ],
+    "2": [
+     true,
+     "2분7초"
+    ],
+    "3": [
+     false,
+     null
+    ],
+    "4": [
+     false,
+     null
+    ],
+    "5": [
+     false,
+     null
+    ],
+    "6": [
+     true,
+     "2분7초"
+    ],
+    "7": [
+     false,
+     null
+    ],
+    "8": [
+     false,
+     null
+    ],
+    "9": [
+     true,
+     "1초"
+    ],
+    "10": [
+     true,
+     "18초"
+    ],
+    "11": [
+     true,
+     "2분7초"
+    ],
+    "12": [
+     true,
+     "2분7초"
+    ],
+    "13": [
+     true,
+     null
+    ]
+   },
+   "150_mabi_2.png": {
+    "0": [
+     true,
+     "38초"
+    ],
+    "1": [
+     false,
+     null
+    ],
+    "2": [
+     true,
+     "1분42초"
+    ],
+    "3": [
+     false,
+     null
+    ],
+    "4": [
+     false,
+     null
+    ],
+    "5": [
+     false,
+     null
+    ],
+    "6": [
+     true,
+     "1분42초"
+    ],
+    "7": [
+     false,
+     null
+    ],
+    "8": [
+     false,
+     null
+    ],
+    "9": [
+     true,
+     "6초"
+    ],
+    "10": [
+     true,
+     "1분42초"
+    ],
+    "11": [
+     true,
+     "1분42초"
+    ],
+    "12": [
+     true,
+     null
+    ],
+    "13": [
+     false,
+     null
+    ]
+   },
+   "150_mabi_3.png": {
+    "0": [
+     true,
+     "13초"
+    ],
+    "1": [
+     false,
+     null
+    ],
+    "2": [
+     true,
+     "1분17초"
+    ],
+    "3": [
+     false,
+     null
+    ],
+    "4": [
+     false,
+     null
+    ],
+    "5": [
+     false,
+     null
+    ],
+    "6": [
+     true,
+     "1분17초"
+    ],
+    "7": [
+     false,
+     null
+    ],
+    "8": [
+     false,
+     null
+    ],
+    "9": [
+     true,
+     "14초"
+    ],
+    "10": [
+     true,
+     "1분17초"
+    ],
+    "11": [
+     true,
+     "1분17초"
+    ],
+    "12": [
+     true,
+     null
+    ],
+    "13": [
+     false,
+     null
+    ]
+   },
+   "150_mabi_4.png": {
+    "0": [
+     false,
+     null
+    ],
+    "1": [
+     false,
+     null
+    ],
+    "2": [
+     true,
+     "59초"
+    ],
+    "3": [
+     false,
+     null
+    ],
+    "4": [
+     false,
+     null
+    ],
+    "5": [
+     false,
+     null
+    ],
+    "6": [
+     true,
+     "59초"
+    ],
+    "7": [
+     false,
+     null
+    ],
+    "8": [
+     false,
+     null
+    ],
+    "9": [
+     true,
+     "59초"
+    ],
+    "10": [
+     true,
+     "59초"
+    ],
+    "11": [
+     true,
+     null
+    ],
+    "12": [
+     false,
+     null
+    ],
+    "13": [
+     false,
+     null
+    ]
+   }
+  }
+ },
+ "150_nanum": {
+  "base": "150_nanum_0.png",
+  "frames": {
+   "150_nanum_0.png": {
+    "0": [
+     false,
+     null
+    ],
+    "1": [
+     true,
+     "1분45초"
+    ],
+    "2": [
+     true,
+     "3분50초"
+    ],
+    "3": [
+     true,
+     null
+    ],
+    "4": [
+     false,
+     null
+    ],
+    "5": [
+     false,
+     null
+    ],
+    "6": [
+     true,
+     "3분50초"
+    ],
+    "7": [
+     false,
+     null
+    ],
+    "8": [
+     false,
+     null
+    ],
+    "9": [
+     true,
+     "3초"
+    ],
+    "10": [
+     true,
+     "1분45초"
+    ],
+    "11": [
+     true,
+     "3분50초"
+    ],
+    "12": [
+     true,
+     "3분50초"
+    ],
+    "13": [
+     true,
+     null
+    ]
+   },
+   "150_nanum_1.png": {
+    "0": [
+     false,
+     null
+    ],
+    "1": [
+     true,
+     "1분39초"
+    ],
+    "2": [
+     true,
+     "3분44초"
+    ],
+    "3": [
+     true,
+     null
+    ],
+    "4": [
+     false,
+     null
+    ],
+    "5": [
+     false,
+     null
+    ],
+    "6": [
+     true,
+     "3분44초"
+    ],
+    "7": [
+     false,
+     null
+    ],
+    "8": [
+     false,
+     null
+    ],
+    "9": [
+     true,
+     "18초"
+    ],
+    "10": [
+     true,
+     "1분39초"
+    ],
+    "11": [
+     true,
+     "3분44초"
+    ],
+    "12": [
+     true,
+     "3분44초"
+    ],
+    "13": [
+     true,
+     null
+    ]
+   },
+   "150_nanum_2.png": {
+    "0": [
+     false,
+     null
+    ],
+    "1": [
+     true,
+     "1분14초"
+    ],
+    "2": [
+     true,
+     "3분19초"
+    ],
+    "3": [
+     true,
+     null
+    ],
+    "4": [
+     false,
+     null
+    ],
+    "5": [
+     false,
+     null
+    ],
+    "6": [
+     true,
+     "3분19초"
+    ],
+    "7": [
+     false,
+     null
+    ],
+    "8": [
+     false,
+     null
+    ],
+    "9": [
+     true,
+     "15초"
+    ],
+    "10": [
+     true,
+     "1분14초"
+    ],
+    "11": [
+     true,
+     "3분19초"
+    ],
+    "12": [
+     true,
+     "3분19초"
+    ],
+    "13": [
+     true,
+     null
+    ]
+   },
+   "150_nanum_3.png": {
+    "0": [
+     false,
+     null
+    ],
+    "1": [
+     true,
+     "49초"
+    ],
+    "2": [
+     true,
+     "2분54초"
+    ],
+    "3": [
+     true,
+     null
+    ],
+    "4": [
+     false,
+     null
+    ],
+    "5": [
+     false,
+     null
+    ],
+    "6": [
+     true,
+     "2분54초"
+    ],
+    "7": [
+     false,
+     null
+    ],
+    "8": [
+     false,
+     null
+    ],
+    "9": [
+     true,
+     "13초"
+    ],
+    "10": [
+     true,
+     "48초"
+    ],
+    "11": [
+     true,
+     "2분54초"
+    ],
+    "12": [
+     true,
+     "2분54초"
+    ],
+    "13": [
+     true,
+     null
+    ]
+   },
+   "150_nanum_4.png": {
+    "0": [
+     false,
+     null
+    ],
+    "1": [
+     true,
+     "31초"
+    ],
+    "2": [
+     true,
+     "2분36초"
+    ],
+    "3": [
+     true,
+     null
+    ],
+    "4": [
+     false,
+     null
+    ],
+    "5": [
+     false,
+     null
+    ],
+    "6": [
+     true,
+     "2분36초"
+    ],
+    "7": [
+     false,
+     null
+    ],
+    "8": [
+     false,
+     null
+    ],
+    "9": [
+     true,
+     "15초"
+    ],
+    "10": [
+     true,
+     "31초"
+    ],
+    "11": [
+     true,
+     "2분36초"
+    ],
+    "12": [
+     true,
+     "2분36초"
+    ],
+    "13": [
+     true,
+     null
+    ]
+   }
+  }
+ }
+}

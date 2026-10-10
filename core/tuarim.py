@@ -51,6 +51,33 @@ def find_pink(crop, scale=1.0):
     return best[:4] if best else None
 
 
+def find_box(crop, scale=1.0):
+    """분홍 칸을 색이 아니라 모양으로: 칸 맨 윗줄 = 흰 가로줄 (폭 23), 바로 아래 줄은 분홍.
+    HDR 이 꺼진 보통 화면에선 칸이 진한 분홍→회색 그라데이션이라 색 기준(find_pink)으로는 못 찾는다.
+    반환값은 find_pink 와 같은 기준 (흰 줄 바로 아래부터 23×9)."""
+    want = round(PINK[0] * scale)
+    px = crop.astype(np.int16)
+    b, g, r = px[..., 0], px[..., 1], px[..., 2]
+    mn, mx = px.min(axis=2), px.max(axis=2)
+    white = (mn >= 180) & ((mx - mn) <= 40) & (r >= 200)     # 흰색~분홍빛 흰색 (150% 는 윗줄이 분홍과 섞여 (220,191,210))
+    pink = (r >= 140) & (r - g >= 40) & (b - g >= 20)
+    best = None
+    for y in range(crop.shape[0] - 2):
+        row = white[y]
+        x = 0
+        while x < len(row):
+            if not row[x]:
+                x += 1; continue
+            a = x
+            while x < len(row) and row[x]:
+                x += 1
+            w = x - a
+            if abs(w - want) <= 2 and pink[y + 1, a:x].mean() >= 0.8 and pink[y + 2, a:x].mean() >= 0.8:
+                if best is None or abs(w - want) < abs(best[2] - want):
+                    best = (a, y + 1, w, round(PINK[1] * scale))
+    return best
+
+
 def _zone(crop, pink, z, scale):
     """숫자 자리 잘라내기 → (영상, 왼쪽에서 드래그 영역 밖이라 검게 채운 열 수)."""
     x, y = pink[0], pink[1]
@@ -110,30 +137,138 @@ class _ZoneReader:
         return text
 
 
+class _GrayZoneReader:
+    """HDR 이 꺼진 보통 화면: 글자가 가늘고 가장자리가 흐려 순백(≥250)으로는 안 잡힌다 → 밝기 그대로 비교.
+    (HDR 화면은 밝게 변환돼 획이 255 로 꽉 차서 굵은 흑백 모양으로 읽혔다)"""
+
+    def __init__(self, d):
+        from core.digits import GrayLib
+        self.band = tuple(d["band"])
+        self.right = bool(d.get("right", False))      # 오른쪽부터 읽기 (가는 글꼴 %)
+        self.mask_min, self.neutral = d.get("mask_min", 170), d.get("neutral", 40)
+        self.lib = GrayLib()
+        for g in d["glyphs"]:
+            self.lib.items.append((g["label"], np.array(g["v"], np.float32) / 255.0))
+
+    @staticmethod
+    def mask(zone):
+        px = zone.astype(np.int16)
+        mn, mx = px.min(axis=2), px.max(axis=2)
+        return (mn >= 170) & ((mx - mn) <= 40)
+
+    def read(self, zone, left_clip=0) -> str | None:
+        if self.right:
+            return self._read_right(zone)
+        m = self.mask(zone); y0, y1 = self.band
+        m[:y0] = False; m[y1 + 1:] = False
+        g = zone.min(axis=2).astype(np.float32) / 255.0
+        cols = m.any(axis=0)
+        text, x = "", 0
+        while x < len(cols):
+            if not cols[x]:
+                x += 1; continue
+            a = x
+            while x < len(cols) and cols[x]:
+                x += 1
+            if m[:, a:x].sum() < 3:
+                continue
+            if left_clip and a <= left_clip + 1 and not text:
+                return None                     # 앞자리가 영역 밖으로 잘렸을 수 있다
+            label = self.lib.match_patch(g[y0:y1 + 1, max(0, a - 1):x + 1])
+            if label is None:
+                return None
+            text += label
+        return text
+
+
+    def _segments(self, zone):
+        px = zone.astype(np.int16)
+        mn, mx = px.min(axis=2), px.max(axis=2)
+        m = (mn >= self.mask_min) & ((mx - mn) <= self.neutral)
+        y0, y1 = self.band
+        m[:y0] = False; m[y1 + 1:] = False
+        cols = m.any(axis=0)
+        out, x = [], 0
+        while x < len(cols):
+            if not cols[x]:
+                x += 1; continue
+            a = x
+            while x < len(cols) and cols[x]:
+                x += 1
+            if m[:, a:x].sum() >= 3:
+                out.append((a, x))
+        return out
+
+    def _read_right(self, zone) -> str | None:
+        """가는 글꼴(UI 배율 조정 100%, HDR 끔): 오른쪽 정렬된 '…%' 를 오른쪽부터 읽는다.
+        첫 덩어리는 '%', 그다음 숫자. 숫자가 아닌 덩어리가 3px 넘게 떨어져 있으면 거기서 끝 (밝은 바닥 얼룩)."""
+        g = zone.min(axis=2).astype(np.float32) / 255.0
+        y0, y1 = self.band
+        text, prev_a = "", None
+        for a, b in reversed(self._segments(zone)):
+            label = self.lib.match_patch(g[y0:y1 + 1, max(0, a - 1):b + 1])
+            if not text:
+                if label != "%":
+                    return None
+            elif label is None or label == "%":
+                if prev_a - b >= 3 and len(text) >= 2:
+                    break
+                return None
+            text = label + text
+            prev_a = a
+        return text if len(text) >= 2 else None
+
+
+def _valid_dorca(t):
+    return bool(t) and t.isdigit() and int(t) <= 15 and (t == "0" or not t.startswith("0"))
+
+
+def _valid_pct(t):
+    n = t[:-1] if t and t.endswith("%") else ""
+    # 앞자리 0 은 실제로 안 나온다 ("0%" 만). "00%" = '100%' 의 '1' 이 잘린 것 → 모름
+    return int(n) if n.isdigit() and int(n) <= 100 and (n == "0" or not n.startswith("0")) else None
+
+
 class TuarimReader:
+    """glyph_file: HDR 화면(밝게 변환됨) 글자 세트. 같은 폴더의 sdr_<변형>.json 이 있으면 보통 화면(HDR 끔)도 읽는다.
+    칸 찾기: 색(밝은 분홍)으로 못 찾으면 모양(흰 윗줄 + 분홍)으로 — HDR 이 꺼지면 칸이 진한 분홍→회색이라."""
+
     def __init__(self, glyph_file: Path, scale: float):
-        d = json.loads(Path(glyph_file).read_text(encoding="utf-8"))
+        glyph_file = Path(glyph_file)
+        d = json.loads(glyph_file.read_text(encoding="utf-8"))
         self.scale = scale
         self.dorca = _ZoneReader(d["dorca"])
         self.pct = _ZoneReader(d["pct"])
+        self.sdr = None
+        sf = glyph_file.parent / f"sdr_{glyph_file.stem}.json"
+        if sf.exists():
+            sd = json.loads(sf.read_text(encoding="utf-8"))
+            self.sdr = (_GrayZoneReader(sd["dorca"]), _GrayZoneReader(sd["pct"]))
+
+    def _read_with(self, readers, crop, box) -> TuarimRead:
+        r = TuarimRead(True)
+        (zd, cd), (zp, cp) = _zone(crop, box, ZONE_DORCA, self.scale), _zone(crop, box, ZONE_PCT, self.scale)
+        if zd is not None:
+            t = readers[0].read(zd, cd)
+            if _valid_dorca(t):
+                r.dorca = int(t)
+        if zp is not None:
+            r.pct = _valid_pct(readers[1].read(zp, cp))
+        return r
 
     def read(self, crop) -> TuarimRead:
         pink = find_pink(crop, self.scale)
-        if pink is None:
-            return TuarimRead(False)
-        r = TuarimRead(True)
-        (zd, cd), (zp, cp) = _zone(crop, pink, ZONE_DORCA, self.scale), _zone(crop, pink, ZONE_PCT, self.scale)
-        if zd is not None:
-            t = self.dorca.read(zd, cd)
-            if t and t.isdigit() and int(t) <= 15 and (t == "0" or not t.startswith("0")):
-                r.dorca = int(t)
-        if zp is not None:
-            t = self.pct.read(zp, cp)
-            n = t[:-1] if t and t.endswith("%") else ""
-            # 앞자리 0 은 실제로 안 나온다 ("0%" 만). "00%" = '100%' 의 '1' 이 잘린 것 → 모름
-            if n.isdigit() and int(n) <= 100 and (n == "0" or not n.startswith("0")):
-                r.pct = int(n)
-        return r
+        if pink is not None:
+            r = self._read_with((self.dorca, self.pct), crop, pink)
+            if r.dorca is not None or r.pct is not None or self.sdr is None:
+                return r
+        # 보통 화면(HDR 끔) 세트는 모양으로 찾은 칸 기준으로 만들었다 (150% 에선 색 기준과 1~2px 다름)
+        box = find_box(crop, self.scale)
+        if box is None:
+            return TuarimRead(pink is not None)
+        if self.sdr is None:
+            return TuarimRead(True)
+        return self._read_with(self.sdr, crop, box)
 
 
 # ---------------------------------------------------------------- 알림 규칙

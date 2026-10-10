@@ -147,6 +147,29 @@ class App:
             self.tray.showMessage(APP_NAME, text)
 
     # ------------------------------------------------------------ 세션
+    def _apply_hdr(self, hwnd=None):
+        """윈도우 HDR 켜짐 → core/screen (부드러운 글꼴 변형의 글자 밝기 기준). 설정이 auto 면 게임 창 모니터에서 감지."""
+        mode = getattr(self.cfg.general, "hdr_mode", "auto")
+        self._hdr_mode_seen = mode
+        if mode in ("on", "off"):
+            on, how = mode == "on", "설정"
+        else:
+            from win.hdr import hdr_enabled
+            det = hdr_enabled(hwnd)
+            on, how = (True, "감지 실패 → 켬으로 가정") if det is None else (det, "자동 감지")
+        changed = getattr(self, "_hdr_state", None) not in (None, on)
+        self._hdr_state, self._hdr_how = on, how
+        screen.set_hdr(on)
+        if getattr(self, "_hdr_logged", None) != (on, how):
+            self._hdr_logged = (on, how)
+            print(f"[{datetime.now():%H:%M:%S}] [화면] HDR {'켬' if on else '꺼짐'} ({how})"
+                  + (" — 부드러운 글꼴 HDR 꺼짐 기준 사용" if screen.soft_sdr() else ""))
+        return changed
+
+    def hdr_text(self) -> str:
+        s = getattr(self, "_hdr_state", None)
+        return "" if s is None else f"HDR {'켬' if s else '꺼짐'} ({self._hdr_how})"
+
     def start_session(self, recalib=False):
         self.timer.stop(); self.sess = None; self.last_error = ""
         self.mismatch, self.mismatch_since, self.mismatch_warned = False, None, False
@@ -156,6 +179,7 @@ class App:
         if not prof:
             self.last_error = "캐릭터가 없습니다"; self._refresh_home(); return
         hwnd = find_window(g.window_title)
+        self._apply_hdr(hwnd)
         if not hwnd:
             self.last_error = f"게임 창을 못 찾음: '{g.window_title}'"; self.tray.showMessage(APP_NAME, self.last_error); self._refresh_home(); return
         cx, cy, cw, ch = client_rect(hwnd)
@@ -300,6 +324,7 @@ class App:
             fg = find_window(self.cfg.general.window_title)
             front = bool(fg) and win32gui.GetForegroundWindow() == fg
             self._apply_show(front)
+            self._game_front = front
             if not front:
                 return          # 게임이 뒤에 있으면 인식도 쉼 (다른 창 픽셀을 읽지 않게). 시간은 추정 타이머가 벽시계로 이어감
         # 한 틱에 전체 화면을 한 번만 캡처해서 잘라 쓴다.
@@ -646,7 +671,8 @@ class App:
         g1 = self.cfg.general
         if self.player:
             self.player.set_options(True, g1.voice_volume, g1.effect_volume, g1.voice_rate, g1.voice_name, g1.sound_file)
-        if self.cfg.general.ui_variant != old:        # UI 크기가 바뀌면 검출 규칙·글자 세트가 달라짐 → 세션 다시
+        if self.cfg.general.ui_variant != old or getattr(self, "_hdr_mode_seen", g1.hdr_mode) != g1.hdr_mode:
+            # UI 크기·HDR 기준이 바뀌면 검출 규칙·글자 세트가 달라짐 → 세션 다시
             self.notify("UI 크기 변경 → 다시 시작합니다. 상태창이 안 맞으면 [영역 설정]을 다시 하세요", "info", 4.0)
             self.start_session()
             return
@@ -669,6 +695,7 @@ class App:
         if not hwnd:
             self.tray.showMessage(APP_NAME, "게임 창을 못 찾음"); return
         screen.set_screen(self.cfg.general.ui_variant)
+        self._apply_hdr(hwnd)
         self._was_active = self.cfg.general.active
         if self._was_active:
             self.toggle_active(False)                   # 드래그 중엔 오버레이·감시 끔
@@ -812,7 +839,9 @@ class App:
             if f.exists():
                 self.tuarim_reader = TuarimReader(f, screen.scale())
                 self.tuarim_tr = TuarimTracker(soon_pct=prof.tuarim_soon_pct, dorca_low=prof.tuarim_dorca_low)
-                print(f"[투아림] 알림 켜짐 · 곧 투아림 {prof.tuarim_soon_pct or '끔'}% · 도르카 부족 {prof.tuarim_dorca_low or '끔'}")
+                print(f"[투아림] 알림 켜짐 · 곧 투아림 {prof.tuarim_soon_pct or '끔'}% · 도르카 부족 {prof.tuarim_dorca_low or '끔'}"
+                      f" · UI {screen.current().label} · {self.hdr_text() or 'HDR ?'} · 영역 {list(prof.regions.tuarim)}")
+                self._tuarim_state = None
             else:
                 print(f"[투아림] 이 UI 크기({screen.current().label})용 글자 세트가 없습니다 → 샘플 수집으로 모아 보내주세요")
         if prof.tuarim_collect:
@@ -833,6 +862,7 @@ class App:
         if self.tuarim_reader:
             r = self.tuarim_reader.read(crop)
             self._tuarim_last = r
+            self._tuarim_log(r)
             for e in self.tuarim_tr.update(r):
                 self._tuarim_alert(e)
         if self.tuarim:
@@ -848,6 +878,26 @@ class App:
             if self.tuarim.full and not was_full:
                 self.notify("투아림 샘플이 다 찼습니다 — [투아림 설정]의 폴더 열기로 보내주세요", "ok", 6.0)
         self._tuarim_home_tick()
+
+    def _tuarim_log(self, r):
+        """읽기 상태가 바뀔 때 로그 한 줄 (칸 못 찾음 / 숫자 못 읽음 / 읽힘). 원격으로 받은 로그만 보고도 원인을 알 수 있게."""
+        state = "none" if not r.found else ("unread" if r.dorca is None and r.pct is None else "ok")
+        if state == getattr(self, "_tuarim_state", None):
+            self._tuarim_cand = None
+            return
+        cand, n = getattr(self, "_tuarim_cand", None) or (state, 0)
+        n = n + 1 if cand == state else 1
+        self._tuarim_cand = (state, n)
+        if n < 10:                      # 10번 연속 같은 상태일 때만 (이펙트가 잠깐 가리는 건 무시)
+            return
+        self._tuarim_state, self._tuarim_cand = state, None
+        t = f"[{datetime.now():%H:%M:%S}] [투아림]"
+        if state == "none":
+            print(f"{t} 분홍 칸을 못 찾음 — 영역이 투아림을 덮는지, 일반 설정 UI 크기({screen.current().label})가 게임과 같은지")
+        elif state == "unread":
+            print(f"{t} 칸은 찾았지만 숫자를 못 읽음 — UI 크기 설정({screen.current().label}) 확인")
+        else:
+            print(f"{t} 읽힘: 도르카 {r.dorca} · 부스트 {r.pct}%")
 
     def _tuarim_alert(self, e):
         from core.tuarim import event_text, speech_text
@@ -868,10 +918,16 @@ class App:
         if not self.tuarim_reader:
             return ""
         if r is None:
-            return "켜기 상태에서 읽습니다" if not self.cfg.general.active else "읽는 중…"
+            if not self.cfg.general.active:
+                return "켜기 상태에서 읽습니다"
+            if not getattr(self, "_game_front", True):
+                return "게임 화면이 앞에 있을 때 읽습니다"
+            return "읽는 중…"
         if not r.found:
             return "투아림이 안 보임 (영역 확인)"
         tr = self.tuarim_tr
+        if tr.dorca is None and tr.pct is None:
+            return f"투아림 칸은 찾았지만 숫자를 못 읽음 — 일반 설정의 UI 크기({screen.current().label})가 게임과 같은지 확인"
         d = "?" if tr.dorca is None else tr.dorca
         p = "?" if tr.pct is None else f"{tr.pct}%"
         eta = tr.eta()

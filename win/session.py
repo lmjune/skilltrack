@@ -114,7 +114,10 @@ class Session:
         """
         self.cap, self.region, self.rect, self.pid = cap, region, rect, pid
         sc = screen.current()                        # UI 크기 변형 (앱이 설정에서 set_screen)
-        if sc.gray:                     # UI 배율 조정 100%: 밝기 템플릿 (core/digits.GrayLib)
+        if screen.soft_sdr() and screen.sdr_glyphs():   # 부드러운 글꼴 + HDR 꺼짐: 밝은 열로 나눈 밝기 템플릿
+            from core.digits import GrayLib
+            self.lib = GrayLib.load(screen.sdr_glyphs())
+        elif sc.gray:                     # UI 배율 조정 100%: 밝기 템플릿 (core/digits.GrayLib)
             from core.digits import GrayLib
             self.lib = GrayLib.load(sc.glyphs)
         else:

@@ -94,8 +94,11 @@ def _row_strokes(text_bgr):
     return name_mask, time_mask, active, red
 
 
-def _dense_runs(mask, runs, min_density=0.12):
-    """글자 덩어리는 획 밀도가 높다 (영역의 20% 안팎). 물 반짝임 같은 잡음은 드문드문이라 버린다."""
+def _dense_runs(mask, runs, min_density=None):
+    """글자 덩어리는 획 밀도가 높다 (영역의 20% 안팎). 물 반짝임 같은 잡음은 드문드문이라 버린다.
+    HDR 꺼짐 + 부드러운 글꼴: 가는 획만 남아 밀도가 0.10~0.12 (나눔 4K 시간 글자 실측) → 0.07"""
+    if min_density is None:
+        min_density = 0.07 if screen.soft_sdr() else 0.12
     h = mask.shape[0]
     return [(a, b) for a, b in runs if mask[:, a:b + 1].sum() / (h * (b - a + 1)) >= min_density]
 

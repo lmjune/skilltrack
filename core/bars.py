@@ -37,7 +37,8 @@ def _soft_ui() -> bool:
     """UI 배율 조정 켬 100% 변형인가 (스태미나 테두리 그림이 다르다)."""
     try:
         from core import screen
-        return screen.current().key == "100_mabi"
+        # HDR 꺼짐이면 기본 UI 와 같은 색 (찬 (169,134,23) G/R 0.79 / 빈 (170,157,32) 0.92, 실측 4K) → 기본 규칙
+        return screen.current().key == "100_mabi" and screen.hdr()
     except Exception:
         return False
 

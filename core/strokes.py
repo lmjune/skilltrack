@@ -55,11 +55,28 @@ def _enclosed(cand, dark):
     return out
 
 
+WHITE_MIN_SDR = 185    # 부드러운 글꼴 + HDR 꺼짐: 켜진 글자 속이 200~255 (나눔 4K 는 최대 248), 꺼진 글자는 ~127
+RED_MIN_SDR = 190
+
+
+def _stroke_masks_sdr(b, g, r, mx, mn, neutral):
+    """HDR 꺼짐 (screen.soft_sdr): 글자가 255 로 꽉 차지 않는다. 실측 4K 어두운 바닥:
+    켜진 이름 ≥185 픽셀 100~500개 / 꺼진 이름 0개, 빨간 시간 R 190~255 · G,B ≤60."""
+    lum = (0.114 * b + 0.587 * g + 0.299 * r)
+    dark = lum <= DARK_LUM_AA
+    white = _small_blobs(neutral & (mn >= WHITE_MIN_SDR))
+    red = _small_blobs((r >= RED_MIN_SDR) & (np.maximum(g, b) <= 60))
+    gray = _enclosed(neutral & (mn >= 95) & (mn < WHITE_MIN_SDR), dark)
+    return white, gray, red
+
+
 def stroke_masks(bgr):
     """(white, gray, red) 불리언 마스크."""
     b, g, r = [bgr[:, :, i].astype(np.int16) for i in range(3)]
     mx, mn = np.maximum(np.maximum(b, g), r), np.minimum(np.minimum(b, g), r)
     neutral = (mx - mn) <= 40
+    if screen.soft_sdr():
+        return _stroke_masks_sdr(b, g, r, mx, mn, neutral)
     lum = (0.114 * b + 0.587 * g + 0.299 * r)          # 휘도. 어두운 빨강(4,3,143)도 어둡다
     dark = (lum <= (DARK_LUM_AA if screen.current().fuzzy else DARK_LUM))
     # 활성 글자·시간 글자는 정확히 255 (불투명). 패널 틴트 때문에 배경은 255가 못 되므로 색만으로 확정.

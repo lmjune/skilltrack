@@ -38,6 +38,7 @@ class General:
     capturable: bool = False               # 오버레이를 스크린샷에 포함 (가이드 작성용). 평소엔 꺼둘 것
     boss_learn_icons: bool = False         # 보스 디버프: 모르는 아이콘을 assets/boss_icons 에 자동 등록 (디버그용. 배경 탓에 변형된 그림이 쌓이므로 평소엔 끔)
     ui_variant: str = "100"                # 게임 안 UI 크기 옵션 (core/screen.py SCREENS). "100" = 변경 없음, "150_mabi", "150_nanum"
+    hdr_mode: str = "auto"                 # 윈도우 HDR: auto(감지) | on | off. 부드러운 글꼴 변형의 글자 밝기 기준이 달라진다
     gacha_image: str = ""                  # 가챠 덮개 그림 (png/jpg). 비우면 어두운 단색
     gacha_rect: list = field(default_factory=list)   # 가챠 덮개 위치·크기 [x, y, w, h] (마지막으로 둔 자리)
     sound_defaults: int = 1          # 1 = 감시 항목 소리 기본값을 '소리 없음'으로 바꾼 뒤의 설정 (한 번만 옮김)
