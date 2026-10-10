@@ -6,7 +6,7 @@
   --bossonly  보스 띠만 (상태창 세션 안 만듦)
   --rect x,y,w,h  상태창 영역 (클라이언트 기준). 기본 STATUS_RECT 는 4K 기준이라 다른 해상도에선 꼭 지정
   --learn     모르는 디버프 아이콘을 assets/boss_icons 에 등록 (기본은 프레임 저장만)
-  --debug 창에서 s: 상태창 프레임 저장, b: 보스 바 영역 저장 (무손실, tests/fixtures/boss/auto), q: 창 닫기
+  --debug 창에서 s: 상태창 프레임 저장, b: 보스 바 영역 저장 (무손실, diag/boss/auto), q: 창 닫기
 """
 import os
 import sys

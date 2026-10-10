@@ -131,7 +131,7 @@ class Session:
 
         r = self._load_or_calibrate(recalib)
         if r is None:
-            raise RuntimeError("상태창을 못 찾음. 상태창이 잘 보이는 곳(어두운 배경)에서 다시 시도하거나 영역을 확인하세요")
+            raise RuntimeError("상태창을 못 찾음. 영역 왼쪽에 버프 아이콘까지 다 들어가게 잡고, 상태창이 잘 보이는 곳(어두운 배경)에서 다시 시도하세요")
         self.layout, self.fps_, self.sites = r
 
         rows = pick or list(range(len(self.layout.rows)))

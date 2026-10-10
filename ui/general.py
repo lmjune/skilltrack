@@ -96,7 +96,7 @@ class GeneralWindow(QWidget):
         l2.addLayout(field("초당 확인 횟수", self.fps, "5면 충분. 높이면 CPU 사용 증가"))
         self.hide_inactive = QCheckBox("게임 창이 뒤로 가면 오버레이 숨김"); self.hide_inactive.setChecked(g.hide_when_inactive); l2.addWidget(self.hide_inactive)
         self.smooth = QCheckBox("스킬 아이콘 확대를 부드럽게 (끄면 픽셀 그대로, 각짐)"); self.smooth.setChecked(cfg.overlays.skill_smooth); l2.addWidget(self.smooth)
-        self.diag = QCheckBox("문제 진단용 프레임 자동 저장 (tests/fixtures/auto)"); self.diag.setChecked(g.diag_save); l2.addWidget(self.diag)
+        self.diag = QCheckBox("문제 진단용 프레임 자동 저장 (diag 폴더)"); self.diag.setChecked(g.diag_save); l2.addWidget(self.diag)
         self.cap = QCheckBox("오버레이를 스크린샷에 포함 (가이드 작성용 — 평소엔 끄세요)"); self.cap.setChecked(g.capturable); l2.addWidget(self.cap)
         self.learn = QCheckBox("보스 디버프: 모르는 아이콘 자동 등록 (디버그용 — 평소엔 끄세요)"); self.learn.setChecked(g.boss_learn_icons); l2.addWidget(self.learn)
         v.addWidget(c2)

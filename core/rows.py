@@ -270,7 +270,8 @@ def _detect_with_band(gray, edge, strokes, band, debug=None):
     if gap_e > icon_e * 0.6:          # 밝은 질감 배경은 틈에도 엣지가 좀 있으니 느슨하게
         return None
     # 아이콘 열은 행의 맨 왼쪽: 그 왼쪽에 글자 획이 있으면 글자 중간을 아이콘으로 잘못 잡은 것
-    if ix0 > 0:
+    # (왼쪽이 아이콘 한 칸보다 좁으면 영역에 잘린 아이콘 조각일 수 있어 안 본다 → 글자 열 오검출은 _icons_colorful 이 거른다)
+    if ix0 >= icon_h:
         left_strokes = sum(1 for t in tops if strokes[t:t + icon_h, :ix0].sum() >= 6)
         if left_strokes > 0.3 * len(tops):
             return None
@@ -322,6 +323,44 @@ def detect_rows(img, debug=None) -> RowLayout | None:
         for x0 in sorted({b[0] for b in tried}):
             for wid in range(screen.px(16), screen.px(21) + 1):
                 attempt((x0, x0 + wid))
+    found = [L for L in found if _icons_colorful(img, L)]
     if not found:
         return None
-    return max(found, key=lambda L: (len(L.rows), -len(L.sections)))
+    best = max(found, key=lambda L: (len(L.rows), -len(L.sections)))
+    _align_text_x(strokes, best)
+    return best
+
+
+ICON_COLOR_MIN = 0.12   # 아이콘 칸 중 채도 있는 픽셀(최대−최소 채널 > 60) 비율의 중앙값 하한. 실측 아이콘 0.17~0.41, 글자 0.00, 글자+잘린 아이콘 조각 0.06~0.07
+
+
+def _icons_colorful(img, L) -> bool:
+    """아이콘 칸에 색이 있는가. 영역 왼쪽이 아이콘을 잘라 먹으면 이름 글자 열이 '아이콘'으로 잡혀
+    (흰/회색 글자뿐이라 색이 없다) 이름 앞부분이 아이콘 자리로, 텍스트 시작이 이름 중간으로 갔다 (QHD 실측)."""
+    v = []
+    for r in L.rows:
+        x, y, w, h = r.icon
+        c = img[y:y + h, x:x + w].astype(np.int16)
+        if c.size:
+            v.append(float(((c.max(axis=2) - c.min(axis=2)) > 60).mean()))
+    return bool(v) and float(np.median(v)) >= ICON_COLOR_MIN
+
+
+def _align_text_x(strokes, L):
+    """이름은 왼쪽 정렬 → '아이콘과 이름 사이 빈 열(거의 모든 행에 획 없음) 바로 뒤, 거의 모든 행에 획이 있는 열' − 2 가
+    텍스트 시작. 영역이 아이콘 왼쪽을 조금 잘라 아이콘 폭이 줄면 (아이콘 왼쪽 + 높이) 계산이 이름 첫 글자 안으로 들어가
+    앞 글자가 잘렸다 (QHD 실측). 아이콘 안 밝은 점은 행마다 달라 비율이 낮다 (≤0.5). 왼쪽으로만 당긴다."""
+    h = L.icon_h
+    ys = [r.y for r in L.rows]
+    x_end = min(strokes.shape[1], L.text_x + 12)
+    if not ys or x_end <= 2:
+        return
+    frac = np.array([float(np.mean([strokes[y:y + h, x].any() for y in ys])) for x in range(x_end)])
+    for x in range(2, x_end):
+        if frac[x] >= 0.7 and frac[x - 1] <= 0.1 and frac[x - 2] <= 0.1:
+            tx = x - 2
+            if tx < L.text_x:
+                d = L.text_x - tx
+                L.text_x = tx
+                L.rows = [Row(y=r.y, icon=r.icon, text=(r.text[0] - d, r.text[1], r.text[2] + d, r.text[3])) for r in L.rows]
+            return

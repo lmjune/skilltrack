@@ -23,3 +23,7 @@ tests/fixtures/*.png
 tests/fixtures/auto/
 tests/fixtures/boss/auto/
 tests/fixtures/tuarim/1*_*/
+# 수집 원본 (win/snap.py 스냅샷, 샘플 수집 폴더 <UI>_<가로>x<세로>). 테스트는 골라 낸 것만 올린다
+tests/fixtures/variants/
+tests/fixtures/bars/*_[0-9]*x[0-9]*/
+tests/fixtures/tuarim/*_[0-9]*x[0-9]*/

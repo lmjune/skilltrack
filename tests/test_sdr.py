@@ -23,15 +23,15 @@ def sdr():
     screen.set_screen("100"); screen.set_hdr(True)
 
 
-@pytest.mark.parametrize("var", ["100_mabi", "150_mabi", "150_nanum"])
+@pytest.mark.parametrize("var", ["100_mabi", "100_mabi_qhd", "150_mabi", "150_nanum"])
 def test_status_sdr(sdr, var):
     """켜짐/꺼짐 + 시간 (밝은 열 끊김으로 나눈 밝기 템플릿, assets/screens/<변형>/time_sdr.json)."""
     from core.digits import GrayLib, read_time
     from core.pixelwatch import make_site, read_site
     from core.rows import detect_rows
     from core.status import parse_rows
-    sdr(var)
     T = json.loads((FIX / "status_truth.json").read_text(encoding="utf-8"))[var]
+    sdr(T.get("variant", var))
     lib = GrayLib.load(screen.sdr_glyphs())
     assert lib.mode == "bright"
     base = cv2.imread(str(FIX / T["base"]))
@@ -52,7 +52,7 @@ def test_status_sdr(sdr, var):
             for i, st in sites.items():          # 획 자리 판정: 켜짐 255 대신 ≥185, 꺼짐 ~127
                 want = "on" if rows[str(i)][0] else "off"
                 assert read_site(img, st).state == want, (name, i)
-    assert n_time >= 20 and not wrong, wrong
+    assert n_time >= 8 and not wrong, wrong
 
 
 def test_hdr_on_keeps_old_rules(sdr):

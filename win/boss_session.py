@@ -9,7 +9,7 @@
   일반 설정 boss_learn_icons(디버그)를 켜면 자동 등록.
 - 빈 띠(아무것도 안 걸림)는 패널이 안 그려져 구형 보스 바와 구분이 안 된다 → 보스 이름(글자 마스크 해시)으로 기억한다.
   띠 패널이 한 번 보인 보스는 bosses.json 에 기록, 다음부터 바가 뜨는 순간 감시 시작. 처음 보는 보스는 첫 디버프부터.
-- 진단 저장: 새 아이콘 등장 프레임, 바는 있는데 띠 위치를 못 잡는 프레임 → tests/fixtures/boss/auto/
+- 진단 저장: 새 아이콘 등장 프레임, 바는 있는데 띠 위치를 못 잡는 프레임 → diag/boss/auto/
 """
 import time
 from dataclasses import dataclass, field

@@ -78,7 +78,7 @@ def stroke_masks(bgr):
     if screen.soft_sdr():
         return _stroke_masks_sdr(b, g, r, mx, mn, neutral)
     lum = (0.114 * b + 0.587 * g + 0.299 * r)          # 휘도. 어두운 빨강(4,3,143)도 어둡다
-    dark = (lum <= (DARK_LUM_AA if screen.current().fuzzy else DARK_LUM))
+    dark = (lum <= (DARK_LUM_AA if (screen.current().fuzzy or screen.current().gray) else DARK_LUM))   # 부드러운 글꼴은 외곽선이 덜 어둡다
     # 활성 글자·시간 글자는 정확히 255 (불투명). 패널 틴트 때문에 배경은 255가 못 되므로 색만으로 확정.
     # 외곽선은 배경에 따라 있기도 없기도 해서 조건에 넣지 않는다. 작은 덩어리 조건만.
     # UI 150%: 글자 가장자리가 배경과 섞여, 밝은 바닥에선 가장자리도 250 을 넘어 글자가 한 겹 두꺼워진다

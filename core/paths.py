@@ -10,7 +10,7 @@
 import sys
 from pathlib import Path
 
-VERSION = "1.5.0"
+VERSION = "0.9.0"
 APP_NAME = "마비오라"        # 표시 이름 (창 제목·트레이). 저장소/모듈 이름은 skilltrack 그대로
 EXE_NAME = "mabiaura"       # exe·로그 파일 이름
 FROZEN = getattr(sys, "frozen", False)
@@ -24,5 +24,5 @@ else:
     DATA = ROOT
 
 PROFILES = DATA / "profiles"
-DIAG = DATA / ("diag" if FROZEN else "tests/fixtures")     # 소스에선 기존 위치 유지 (tests/fixtures/auto, boss/auto)
+DIAG = DATA / "diag"      # 진단 프레임·샘플 수집 (git 제외). 예전엔 소스 실행 시 tests/fixtures 아래라 저장소에 섞였다
 UNKNOWN_DIR = DATA / ("diag/unknown" if FROZEN else "assets/unknown")

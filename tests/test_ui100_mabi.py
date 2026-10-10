@@ -82,3 +82,19 @@ def test_rows_found_for_any_drag(variant):
         if L is None or len(L.rows) != 17:
             bad.append(((dx, dy, dw, dh), None if L is None else len(L.rows)))
     assert not bad, bad
+
+
+@pytest.mark.skipif(not (FIX / "status_region_qhd.webp").exists(), reason="fixture 없음")
+def test_text_start_when_icons_cut(variant):
+    """QHD: 영역 왼쪽이 아이콘을 잘라 먹으면 이름 앞 글자가 아이콘 자리로 가고 텍스트가 이름 중간에서 시작했다
+    (감시 항목 그림 '비바▌체'). 아이콘이 조금 잘리면 텍스트 시작은 이름 첫 글자 2px 앞,
+    아이콘이 다 잘리면 (글자 열을 아이콘으로 잡는 대신) 못 찾음."""
+    from core.rows import detect_rows
+    img = cv2.imread(str(FIX / "status_region_qhd.webp"))
+    name_x = 25                                    # 이 그림에서 이름 첫 획 열
+    for dx in range(0, 16, 2):
+        L = detect_rows(img[:, dx:])
+        assert L is not None and len(L.rows) == 13, dx
+        assert L.text_x == name_x - dx - 2, (dx, L.text_x)
+    for dx in (18, 20, 22):
+        assert detect_rows(img[:, dx:]) is None, dx

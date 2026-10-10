@@ -170,6 +170,9 @@ class WatchesWindow(QWidget):
             ix, iy, iw, ih = rw.icon; tx, ty, tw, th = rw.text
             st = states.get(i)
             a, b = (st.name_range if st and st.name_range else (0, min(tw, 140)))
+            # 그림은 이름 획 범위보다 좌우로 조금 넓게: 부드러운 글꼴의 흐린 가장자리(꺼진 글자 끝 'ㅣ' 등)는 획으로 안 잡혀
+            # 딱 맞게 자르면 끝 글자가 잘려 보였다 (판정과는 무관, 보기용)
+            a, b = max(0, a - 2), min(tw - 1, b + 3)
             thumb = np.concatenate([frame[iy:iy + ih, ix:ix + iw], np.zeros((ih, 4, 3), np.uint8),
                                     frame[ty:ty + th, tx + a:tx + b + 1][:ih]], axis=1)
             card = RowCard(i, to_pixmap(thumb), prof.watches.get(i, WatchCfg(enabled=False)), mirrors.get(i), pid=cfg.current)

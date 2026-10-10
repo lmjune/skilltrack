@@ -1023,5 +1023,227 @@
     ]
    }
   }
+ },
+ "100_mabi_qhd": {
+  "variant": "100_mabi",
+  "base": "100_mabi_qhd_0.png",
+  "frames": {
+   "100_mabi_qhd_0.png": {
+    "0": [
+     true,
+     "1분18초"
+    ],
+    "1": [
+     false,
+     null
+    ],
+    "2": [
+     true,
+     "3분0초"
+    ],
+    "3": [
+     false,
+     null
+    ],
+    "4": [
+     false,
+     null
+    ],
+    "5": [
+     true,
+     "3분0초"
+    ],
+    "6": [
+     false,
+     null
+    ],
+    "7": [
+     false,
+     null
+    ],
+    "8": [
+     false,
+     null
+    ],
+    "9": [
+     false,
+     null
+    ],
+    "10": [
+     true,
+     "3분0초"
+    ],
+    "11": [
+     true,
+     "3분0초"
+    ],
+    "12": [
+     true,
+     null
+    ]
+   },
+   "100_mabi_qhd_1.png": {
+    "0": [
+     true,
+     "42초"
+    ],
+    "1": [
+     false,
+     null
+    ],
+    "2": [
+     true,
+     "2분24초"
+    ],
+    "3": [
+     false,
+     null
+    ],
+    "4": [
+     false,
+     null
+    ],
+    "5": [
+     true,
+     "2분24초"
+    ],
+    "6": [
+     false,
+     null
+    ],
+    "7": [
+     false,
+     null
+    ],
+    "8": [
+     false,
+     null
+    ],
+    "9": [
+     false,
+     null
+    ],
+    "10": [
+     true,
+     "2분24초"
+    ],
+    "11": [
+     true,
+     "2분24초"
+    ],
+    "12": [
+     true,
+     null
+    ]
+   },
+   "100_mabi_qhd_2.png": {
+    "0": [
+     true,
+     "2초"
+    ],
+    "1": [
+     false,
+     null
+    ],
+    "2": [
+     true,
+     "1분44초"
+    ],
+    "3": [
+     false,
+     null
+    ],
+    "4": [
+     false,
+     null
+    ],
+    "5": [
+     true,
+     "1분44초"
+    ],
+    "6": [
+     false,
+     null
+    ],
+    "7": [
+     false,
+     null
+    ],
+    "8": [
+     false,
+     null
+    ],
+    "9": [
+     false,
+     null
+    ],
+    "10": [
+     true,
+     "1분44초"
+    ],
+    "11": [
+     true,
+     "1분44초"
+    ],
+    "12": [
+     true,
+     null
+    ]
+   },
+   "100_mabi_qhd_3.png": {
+    "0": [
+     false,
+     null
+    ],
+    "1": [
+     false,
+     null
+    ],
+    "2": [
+     true,
+     "1분35초"
+    ],
+    "3": [
+     false,
+     null
+    ],
+    "4": [
+     false,
+     null
+    ],
+    "5": [
+     true,
+     "1분35초"
+    ],
+    "6": [
+     false,
+     null
+    ],
+    "7": [
+     false,
+     null
+    ],
+    "8": [
+     false,
+     null
+    ],
+    "9": [
+     false,
+     null
+    ],
+    "10": [
+     true,
+     "1분35초"
+    ],
+    "11": [
+     true,
+     "1분35초"
+    ],
+    "12": [
+     true,
+     null
+    ]
+   }
+  }
  }
 }
